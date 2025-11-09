@@ -78,7 +78,7 @@ This document provides complete specifications to build a working Proof of Conce
 │  ┌─────────────────────┐                                        │
 │  │ SERVICE 1:          │                                        │
 │  │ Ethereum Mock       │                                        │
-│  │ (Ganache/Mock JSON) │                                        │
+│  │ (Foundry Anvil)     │                                        │
 │  │ Port: 8545          │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -89,7 +89,7 @@ This document provides complete specifications to build a working Proof of Conce
 
 | Service | Purpose | Tech Stack | Runs |
 |---------|---------|------------|------|
-| 1. Ethereum Mock | Provides test data (4,096 accounts) | Ganache or JSON | Always |
+| 1. Ethereum Mock | Provides test data (4,096 accounts) | Foundry Anvil | Always |
 | 2. DB Generator | Extracts state → database.bin | Python | Init only |
 | 3. Hint Generator | database.bin → hint.bin | C++ (FrodoPIR) | Init only |
 | 4. PIR Server | Answers PIR queries | Node.js + Express | Always |
@@ -100,8 +100,8 @@ This document provides complete specifications to build a working Proof of Conce
 
 ```
 Initialization (once):
-1. Ethereum Mock generates 4,096 random accounts with balances
-2. DB Generator queries mock → creates database.bin (512 KB)
+1. Anvil starts with 4,096 pre-funded accounts
+2. DB Generator queries Anvil → creates database.bin (512 KB)
 3. Hint Generator processes database.bin → creates hint.bin (~12 MB)
 4. CDN Mock serves hint.bin
 
@@ -128,8 +128,7 @@ frodopir-poc/
 ├── services/
 │   ├── eth-mock/
 │   │   ├── Dockerfile
-│   │   ├── generate-accounts.js   # Creates 4,096 test accounts
-│   │   └── accounts.json          # Generated account data
+│   │   └── init-anvil.sh          # Anvil startup script
 │   │
 │   ├── db-generator/
 │   │   ├── Dockerfile
@@ -187,60 +186,59 @@ frodopir-poc/
 
 **Dockerfile** (`services/eth-mock/Dockerfile`):
 ```dockerfile
-FROM node:18-alpine
+FROM ghcr.io/foundry-rs/foundry:latest
 
 WORKDIR /app
 
-# Install ganache (or use custom mock)
-RUN npm install -g ganache
+# Copy initialization script
+COPY init-anvil.sh .
+RUN chmod +x init-anvil.sh
 
-# Copy account generation script
-COPY generate-accounts.js .
-
-# Generate test accounts
-RUN node generate-accounts.js > accounts.json
-
-# Expose Ganache port
+# Expose Anvil port
 EXPOSE 8545
 
-# Start Ganache with pre-funded accounts
-CMD ["ganache", "--database.dbPath=/data/ganache", "--wallet.accounts=accounts.json", "--host=0.0.0.0"]
+# Start Anvil with pre-funded accounts
+CMD ["./init-anvil.sh"]
 ```
 
-**generate-accounts.js**:
-```javascript
-const crypto = require('crypto');
+**init-anvil.sh**:
+```bash
+#!/bin/bash
+set -e
 
-const NUM_ACCOUNTS = 4096; // 2^12
+# Configuration
+NUM_ACCOUNTS=4096  # 2^12
+BALANCE="1000000000000000000000"  # 1000 ETH in wei
 
-const accounts = [];
+echo "Starting Anvil with $NUM_ACCOUNTS pre-funded accounts..."
 
-for (let i = 0; i < NUM_ACCOUNTS; i++) {
-  const privateKey = '0x' + crypto.randomBytes(32).toString('hex');
-  const balance = (Math.random() * 1000 * 1e18).toString(); // 0-1000 ETH
-
-  accounts.push({
-    secretKey: privateKey,
-    balance: balance
-  });
-}
-
-console.log(JSON.stringify(accounts, null, 2));
+# Start Anvil with custom configuration
+anvil \
+  --host 0.0.0.0 \
+  --port 8545 \
+  --accounts $NUM_ACCOUNTS \
+  --balance $BALANCE \
+  --chain-id 1 \
+  --block-time 12 \
+  --state-interval 1
 ```
 
-**Alternative**: Use simple JSON file instead of Ganache
-```json
-{
-  "accounts": [
-    {
-      "address": "0x1234...",
-      "balance": "1000000000000000000",
-      "nonce": 0
-    },
-    ...
-  ]
-}
+**Alternative Configuration** - Using `anvil` CLI flags:
+```bash
+# For deterministic addresses (useful for testing)
+anvil \
+  --host 0.0.0.0 \
+  --accounts 4096 \
+  --balance 1000000000000000000000 \
+  --mnemonic "test test test test test test test test test test test junk"
 ```
+
+**Note**: Anvil advantages over Ganache:
+- ✅ Faster (written in Rust)
+- ✅ Part of Foundry ecosystem (widely used)
+- ✅ Better EVM compatibility
+- ✅ Built-in support for large account sets
+- ✅ No need for separate account generation script
 
 ---
 
@@ -294,22 +292,20 @@ def main():
     w3 = Web3(Web3.HTTPProvider(ETH_RPC))
 
     if not w3.is_connected():
-        # Fallback: Load from JSON file
-        print("Ethereum node not available, loading from accounts.json")
-        with open('/app/accounts.json', 'r') as f:
-            accounts_data = json.load(f)
-        accounts = [(acc['address'], int(acc['balance']), acc.get('nonce', 0))
-                   for acc in accounts_data['accounts'][:NUM_ENTRIES]]
-    else:
-        print("Fetching account data...")
-        # Get accounts from Ganache
-        addresses = w3.eth.accounts[:NUM_ENTRIES]
-        accounts = []
+        raise Exception(f"Cannot connect to Ethereum node at {ETH_RPC}")
 
-        for addr in addresses:
-            balance = w3.eth.get_balance(addr)
-            nonce = w3.eth.get_transaction_count(addr)
-            accounts.append((addr, balance, nonce))
+    print("Fetching account data from Anvil...")
+    # Get accounts from Anvil
+    addresses = w3.eth.accounts[:NUM_ENTRIES]
+    accounts = []
+
+    for idx, addr in enumerate(addresses):
+        balance = w3.eth.get_balance(addr)
+        nonce = w3.eth.get_transaction_count(addr)
+        accounts.append((addr, balance, nonce))
+
+        if (idx + 1) % 500 == 0:
+            print(f"  Processed {idx + 1}/{NUM_ENTRIES} accounts...")
 
     # Sort by address (deterministic ordering)
     accounts.sort(key=lambda x: x[0].lower())
@@ -1074,7 +1070,7 @@ docker-compose build
 docker-compose up
 
 # Expected output:
-# [eth-mock] Ganache listening on 0.0.0.0:8545
+# [eth-mock] Anvil listening on 0.0.0.0:8545
 # [db-generator] ✅ Database created: 512 KB
 # [hint-generator] ✅ Hint generated: 12 MB
 # [pir-server] 🚀 PIR Server listening on port 3000
