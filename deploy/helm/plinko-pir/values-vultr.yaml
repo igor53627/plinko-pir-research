@@ -1,0 +1,270 @@
+# =============================================================================
+# VULTR KUBERNETES ENGINE (VKE) SPECIFIC VALUES
+# =============================================================================
+# Override values.yaml with Vultr-specific configuration
+# Usage: helm install plinko-pir ./plinko-pir -f values-vultr.yaml
+
+# Global settings for Vultr
+global:
+  # Vultr Block Storage storage class
+  storageClass: "vultr-block-storage"
+
+  # Your domain (set this for production)
+  domain: "example.com"
+
+  # TLS configuration
+  tls:
+    enabled: true
+    issuer: "letsencrypt-prod"
+
+# =============================================================================
+# PERSISTENT STORAGE (VULTR BLOCK STORAGE)
+# =============================================================================
+persistence:
+  enabled: true
+  # Vultr Block Storage - High Performance SSD
+  storageClass: "vultr-block-storage"
+  accessMode: ReadWriteMany
+  size: 20Gi  # Increase for production
+  annotations:
+    # Vultr-specific annotations
+    volume.beta.kubernetes.io/storage-class: "vultr-block-storage"
+    # Keep volume on chart deletion (set to "delete" for testing)
+    helm.sh/resource-policy: "keep"
+
+# =============================================================================
+# PRODUCTION RESOURCE ALLOCATIONS
+# =============================================================================
+
+# Service 1: ETH-MOCK (ANVIL)
+ethMock:
+  enabled: true
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+
+# Service 2: DB-GENERATOR
+dbGenerator:
+  enabled: true
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+# Service 3: PLINKO-HINT-GENERATOR
+plinkoHintGenerator:
+  enabled: true
+
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+
+# Service 4: PLINKO-UPDATE-SERVICE
+plinkoUpdateService:
+  enabled: true
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# Service 5: PLINKO-PIR-SERVER
+plinkoPirServer:
+  enabled: true
+  replicaCount: 3  # Increase for production load
+
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "4Gi"
+      cpu: "2000m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Service 6: CDN-MOCK
+cdnMock:
+  enabled: true
+  replicaCount: 3  # Distribute load across availability zones
+
+  config:
+    gzipEnabled: true
+    corsEnabled: true
+    cacheMaxAge: 3600
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Service 7: RABBY-WALLET
+rabbyWallet:
+  enabled: true
+  replicaCount: 3
+
+  config:
+    # Set these to your actual domains (will be exposed via ingress)
+    pirServerUrl: "https://plinko-api.example.com"
+    cdnUrl: "https://plinko-cdn.example.com"
+    fallbackRpc: "https://eth.llamarpc.com"
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# =============================================================================
+# INGRESS CONFIGURATION (VULTR LOAD BALANCER)
+# =============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+
+  annotations:
+    # Vultr LoadBalancer annotations
+    service.beta.kubernetes.io/vultr-loadbalancer-protocol: "tcp"
+    service.beta.kubernetes.io/vultr-loadbalancer-proxy-protocol: "v2"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-path: "/health"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-interval: "10s"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-timeout: "5s"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-unhealthy-threshold: "3"
+    service.beta.kubernetes.io/vultr-loadbalancer-healthcheck-healthy-threshold: "2"
+
+    # Nginx ingress annotations
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+
+    # cert-manager annotations for automatic TLS
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+  hosts:
+    # Wallet UI (main entry point)
+    - host: "plinko-wallet.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+          service: rabby-wallet
+          port: 80
+
+    # PIR Server API
+    - host: "plinko-api.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+          service: plinko-pir-server
+          port: 3000
+
+    # CDN for hint and delta files
+    - host: "plinko-cdn.example.com"
+      paths:
+        - path: /
+          pathType: Prefix
+          service: cdn-mock
+          port: 8080
+
+  tls:
+    - secretName: plinko-wallet-tls
+      hosts:
+        - plinko-wallet.example.com
+    - secretName: plinko-api-tls
+      hosts:
+        - plinko-api.example.com
+    - secretName: plinko-cdn-tls
+      hosts:
+        - plinko-cdn.example.com
+
+# =============================================================================
+# SECURITY
+# =============================================================================
+security:
+  podSecurityPolicy:
+    enabled: false  # VKE doesn't enable PSP by default
+
+  podSecurityContext:
+    runAsNonRoot: false
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# MONITORING (OPTIONAL)
+# =============================================================================
+monitoring:
+  prometheus:
+    enabled: false  # Enable if you have Prometheus installed
+    serviceMonitor:
+      enabled: false
+
+  grafana:
+    enabled: false  # Enable if you have Grafana installed
+
+# =============================================================================
+# BACKUP (OPTIONAL)
+# =============================================================================
+backup:
+  enabled: false  # Enable for production
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  retention: 7
+  volumeSnapshots:
+    enabled: false  # Vultr Block Storage supports snapshots
+
+# =============================================================================
+# DEBUGGING
+# =============================================================================
+debug:
+  enabled: false
+  logLevel: "info"  # Set to "debug" for troubleshooting

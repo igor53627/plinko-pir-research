@@ -276,7 +276,7 @@ Ethereum JSON-RPC is the standard interface for querying blockchain data:
 
 ### Quick Start
 
-### Run the PoC
+#### Option 1: Docker Compose (Fastest)
 
 ```bash
 # Build and start all services
@@ -290,7 +290,57 @@ open http://localhost:5173
 make test
 ```
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for complete setup instructions.
+#### Option 2: Local Kubernetes (Production-like)
+
+Test the full Kubernetes deployment locally before deploying to Vultr:
+
+```bash
+# Navigate to Helm chart directory
+cd deploy/helm/plinko-pir
+
+# Deploy to local Kind cluster (automated)
+./scripts/deploy-local.sh
+
+# Run validation tests
+./scripts/test-local.sh
+
+# Access wallet
+open http://localhost:30173
+```
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for Docker Compose setup or [deploy/LOCAL_TESTING.md](deploy/LOCAL_TESTING.md) for local Kubernetes testing.
+
+## Deployment
+
+The PoC can be deployed in multiple ways:
+
+### Development (Docker Compose)
+- **Best for**: Local development and testing
+- **Setup time**: 5 minutes
+- **Resources**: Minimal (runs on laptop)
+- **Guide**: [IMPLEMENTATION.md](IMPLEMENTATION.md)
+
+### Local Kubernetes (Kind/Minikube)
+- **Best for**: Testing Helm charts before production deployment
+- **Setup time**: 15 minutes (including initialization)
+- **Resources**: 8GB RAM, 4 CPU cores
+- **Guide**: [deploy/LOCAL_TESTING.md](deploy/LOCAL_TESTING.md)
+
+```bash
+cd deploy/helm/plinko-pir
+./scripts/deploy-local.sh
+```
+
+### Production Kubernetes (Vultr VKE)
+- **Best for**: Production deployment with auto-scaling and high availability
+- **Setup time**: 20 minutes
+- **Resources**: 3-node cluster (4GB RAM per node minimum)
+- **Guide**: [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)
+
+```bash
+cd deploy/helm/plinko-pir
+./scripts/deploy.sh --production
+```
 
 ## Research Artifacts
 

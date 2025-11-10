@@ -1,0 +1,15 @@
+{{- if .Values.rabbyWallet.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "plinko-pir.fullname" . }}-wallet-config
+  labels:
+    {{- include "plinko-pir.componentLabels" (dict "component" "rabby-wallet" "root" .) | nindent 4 }}
+data:
+  config.js: |
+    window.PLINKO_PIR_CONFIG = {
+      pirServerUrl: '{{ .Values.rabbyWallet.config.pirServerUrl | default (printf "http://%s-pir-server:3000" (include "plinko-pir.fullname" .)) }}',
+      cdnUrl: '{{ .Values.rabbyWallet.config.cdnUrl | default (printf "http://%s-cdn-mock:8080" (include "plinko-pir.fullname" .)) }}',
+      fallbackRpc: '{{ .Values.rabbyWallet.config.fallbackRpc }}'
+    };
+{{- end }}

@@ -1,0 +1,17 @@
+{{- if .Values.cdnMock.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "plinko-pir.fullname" . }}-cdn-mock
+  labels:
+    {{- include "plinko-pir.componentLabels" (dict "component" "cdn-mock" "root" .) | nindent 4 }}
+spec:
+  type: {{ .Values.cdnMock.service.type }}
+  ports:
+    - port: {{ .Values.cdnMock.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "plinko-pir.componentSelectorLabels" (dict "component" "cdn-mock" "root" .) | nindent 4 }}
+{{- end }}

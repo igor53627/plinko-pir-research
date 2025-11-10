@@ -1,0 +1,269 @@
+# =============================================================================
+# LOCAL KUBERNETES (KIND/MINIKUBE) SPECIFIC VALUES
+# =============================================================================
+# Override values.yaml for local Kubernetes testing
+# Usage:
+#   helm install plinko-pir ./plinko-pir -f values-local.yaml
+#   Or use: scripts/deploy-local.sh
+#
+# Key differences from production:
+# - NodePort instead of LoadBalancer
+# - hostPath storage instead of Vultr Block Storage
+# - Reduced resource limits for laptop/desktop
+# - Single replica (no auto-scaling)
+# - Smaller PVC size for testing
+# =============================================================================
+
+# Global settings for local development
+global:
+  # Use local-path or hostPath storage class
+  storageClass: "standard"  # Kind uses 'standard', Minikube uses 'standard'
+
+  domain: "localhost"
+
+  tls:
+    enabled: false  # No TLS for local testing
+
+# =============================================================================
+# PERSISTENT STORAGE (LOCAL)
+# =============================================================================
+persistence:
+  enabled: true
+  # Use standard storage class (hostPath/local-path provisioner)
+  storageClass: "standard"
+  accessMode: ReadWriteOnce  # Local doesn't support RWX easily
+  size: 10Gi  # Smaller for local testing
+  annotations:
+    # Override the vultr-specific annotation from values.yaml
+    volume.beta.kubernetes.io/storage-class: "standard"
+
+# =============================================================================
+# REDUCED RESOURCE ALLOCATIONS FOR LOCAL TESTING
+# =============================================================================
+
+# Service 1: ETH-MOCK (ANVIL)
+ethMock:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: plinko-pir-research-eth-mock
+    tag: latest
+    pullPolicy: Never  # Use local images
+
+  config:
+    accounts: 1000  # Reduced for local testing (was 8388608 = 2^23)
+    balance: 1000  # 1000 ETH per account (value in Ether, not wei)
+    blockTime: 12  # 12-second blocks
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# Service 2: DB-GENERATOR
+dbGenerator:
+  enabled: true
+
+  image:
+    repository: plinko-pir-research-db-generator
+    tag: latest
+    pullPolicy: Never
+
+  config:
+    dbSize: 1000  # Must match ethMock.config.accounts
+    entrySize: 8
+    concurrency: 10000
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# Service 3: PLINKO-HINT-GENERATOR
+plinkoHintGenerator:
+  enabled: true
+
+  image:
+    repository: plinko-pir-research-plinko-hint-generator
+    tag: latest
+    pullPolicy: Never
+
+  config:
+    dbSize: 1000  # Must match ethMock.config.accounts
+    chunkSize: 256
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# Service 4: PLINKO-UPDATE-SERVICE
+plinkoUpdateService:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: plinko-pir-research-plinko-update-service
+    tag: latest
+    pullPolicy: Never
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "250m"
+
+# Service 5: PLINKO-PIR-SERVER
+plinkoPirServer:
+  enabled: true
+  replicaCount: 1  # Single instance for local testing
+
+  image:
+    repository: plinko-pir-research-plinko-pir-server
+    tag: latest
+    pullPolicy: Never
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  # Disable autoscaling for local testing
+  autoscaling:
+    enabled: false
+
+# Service 6: CDN-MOCK
+cdnMock:
+  enabled: true
+  replicaCount: 1  # Single instance for local
+
+  image:
+    repository: plinko-pir-research-cdn-mock
+    tag: latest
+    pullPolicy: Never
+
+  config:
+    gzipEnabled: true
+    corsEnabled: true
+    cacheMaxAge: 3600
+
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+
+  # Disable autoscaling
+  autoscaling:
+    enabled: false
+
+# Service 7: RABBY-WALLET
+rabbyWallet:
+  enabled: true
+  replicaCount: 1  # Single instance for local
+
+  image:
+    repository: plinko-pir-research-rabby-wallet
+    tag: latest
+    pullPolicy: Never
+
+  config:
+    # These will be set to localhost ports by deploy-local.sh
+    pirServerUrl: "http://localhost:30000"
+    cdnUrl: "http://localhost:30080"
+    fallbackRpc: "https://eth.llamarpc.com"
+
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+
+  # Disable autoscaling
+  autoscaling:
+    enabled: false
+
+# =============================================================================
+# INGRESS CONFIGURATION (NODEPORT FOR LOCAL)
+# =============================================================================
+# For local testing, we expose services via NodePort instead of Ingress
+# Port forwarding script will handle access
+ingress:
+  enabled: false  # Disable ingress for local testing
+
+# Override service types to NodePort for local access
+# These will be applied via the templates
+serviceOverrides:
+  rabbyWallet:
+    type: NodePort
+    nodePort: 30173  # Access wallet at localhost:30173
+  plinkoPirServer:
+    type: NodePort
+    nodePort: 30000  # Access PIR server at localhost:30000
+  cdnMock:
+    type: NodePort
+    nodePort: 30080  # Access CDN at localhost:30080
+  ethMock:
+    type: NodePort
+    nodePort: 30545  # Access Anvil RPC at localhost:30545
+
+# =============================================================================
+# SECURITY (RELAXED FOR LOCAL)
+# =============================================================================
+security:
+  podSecurityPolicy:
+    enabled: false
+
+  podSecurityContext:
+    runAsNonRoot: false
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# MONITORING (DISABLED FOR LOCAL)
+# =============================================================================
+monitoring:
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+  loki:
+    enabled: false
+
+# =============================================================================
+# BACKUP (DISABLED FOR LOCAL)
+# =============================================================================
+backup:
+  enabled: false
+
+# =============================================================================
+# DEBUGGING (ENABLED FOR LOCAL)
+# =============================================================================
+debug:
+  enabled: true
+  logLevel: "debug"  # Verbose logging for local testing

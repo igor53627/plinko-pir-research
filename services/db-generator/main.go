@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 
 const (
 	// Database configuration
-	TotalAccounts    = 8388608 // 2^23 accounts
 	DatabasePath     = "/data/database.bin"
 	AddressMappingPath = "/data/address-mapping.bin"
 
@@ -28,16 +28,38 @@ const (
 	AnvilMnemonic = "test test test test test test test test test test test junk"
 )
 
+// Get total accounts from environment or use default
+func getTotalAccounts() int {
+	if dbSize := os.Getenv("DB_SIZE"); dbSize != "" {
+		if size, err := strconv.Atoi(dbSize); err == nil {
+			return size
+		}
+	}
+	return 8388608 // Default: 2^23 accounts
+}
+
+// Get RPC URL from environment or use default
+func getRPCURL() string {
+	if rpcURL := os.Getenv("RPC_URL"); rpcURL != "" {
+		return rpcURL
+	}
+	return "http://eth-mock:8545" // Default for docker-compose
+}
+
 type AccountData struct {
 	Address common.Address
 	Balance *big.Int
 }
 
 func main() {
+	totalAccounts := getTotalAccounts()
+	rpcURL := getRPCURL()
+
 	log.Println("========================================")
 	log.Println("Plinko PIR Database Generator (Go)")
 	log.Println("========================================")
-	log.Printf("Accounts: %d (2^23)\n", TotalAccounts)
+	log.Printf("Accounts: %d\n", totalAccounts)
+	log.Printf("RPC URL: %s\n", rpcURL)
 	log.Printf("Concurrent workers: %d\n", ConcurrentWorkers)
 	log.Println()
 
@@ -49,7 +71,7 @@ func main() {
 	}
 
 	// Connect to Anvil
-	client, err := ethclient.Dial("http://eth-mock:8545")
+	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to Anvil: %v", err)
 	}
@@ -63,7 +85,7 @@ func main() {
 	// Generate all account addresses deterministically
 	log.Println("Generating account addresses...")
 	startGen := time.Now()
-	addresses := generateAnvilAddresses(TotalAccounts)
+	addresses := generateAnvilAddresses(totalAccounts)
 	log.Printf("Generated %d addresses in %v\n", len(addresses), time.Since(startGen))
 
 	// Query balances concurrently
@@ -91,7 +113,7 @@ func main() {
 	}
 
 	// Verify output
-	verifyOutput()
+	verifyOutput(totalAccounts)
 
 	log.Println()
 	log.Println("✅ Database generation complete!")
@@ -246,13 +268,13 @@ func writeAddressMapping(accounts []AccountData) error {
 }
 
 // verifyOutput checks file sizes match expected values
-func verifyOutput() {
+func verifyOutput(totalAccounts int) {
 	// Check database.bin
 	dbInfo, err := os.Stat(DatabasePath)
 	if err != nil {
 		log.Printf("⚠️  Could not stat database.bin: %v\n", err)
 	} else {
-		expectedDB := int64(TotalAccounts * 8)
+		expectedDB := int64(totalAccounts * 8)
 		if dbInfo.Size() == expectedDB {
 			log.Printf("✅ database.bin: %d bytes (expected %d)\n", dbInfo.Size(), expectedDB)
 		} else {
@@ -265,7 +287,7 @@ func verifyOutput() {
 	if err != nil {
 		log.Printf("⚠️  Could not stat address-mapping.bin: %v\n", err)
 	} else {
-		expectedMap := int64(TotalAccounts * 24)
+		expectedMap := int64(totalAccounts * 24)
 		if mapInfo.Size() == expectedMap {
 			log.Printf("✅ address-mapping.bin: %d bytes (expected %d)\n", mapInfo.Size(), expectedMap)
 		} else {

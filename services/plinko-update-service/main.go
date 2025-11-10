@@ -26,7 +26,6 @@ const (
 	CacheSizeMB  = 64   // 8.4M × 8 bytes
 
 	// Ethereum configuration
-	AnvilURL          = "ws://eth-mock:8545"
 	BlockProcessDelay = 100 * time.Millisecond
 
 	// Output configuration
@@ -38,6 +37,14 @@ const (
 	SimulateChanges       = true
 	ChangesPerBlock       = 2000 // Simulated account changes per block
 )
+
+// Get RPC URL from environment or use default
+func getRPCURL() string {
+	if rpcURL := os.Getenv("RPC_URL"); rpcURL != "" {
+		return rpcURL
+	}
+	return "http://eth-mock:8545" // Default for docker-compose
+}
 
 type DBEntry [DBEntryLength]uint64
 
@@ -97,7 +104,7 @@ func main() {
 	}
 
 	// Connect to Ethereum
-	log.Printf("Connecting to Anvil at %s...\n", AnvilURL)
+	log.Printf("Connecting to Anvil at %s...\n", getRPCURL())
 	if err := service.connectToEthereum(); err != nil {
 		log.Fatalf("Failed to connect to Ethereum: %v", err)
 	}
@@ -160,9 +167,15 @@ func loadDatabase() ([]uint64, uint64, uint64) {
 
 func (s *PlinkoUpdateService) connectToEthereum() error {
 	var err error
-	// Try WebSocket first, fall back to HTTP
-	wsURL := AnvilURL
-	httpURL := "http://eth-mock:8545"
+	// Get RPC URL from environment
+	rpcBaseURL := getRPCURL()
+
+	// Try WebSocket first (replace http:// with ws://)
+	wsURL := "ws://" + rpcBaseURL[7:] // Skip "http://" prefix
+	if rpcBaseURL[:7] == "https:/" {
+		wsURL = "wss://" + rpcBaseURL[8:] // Skip "https://" prefix
+	}
+	httpURL := rpcBaseURL
 
 	for i := 0; i < 10; i++ {
 		s.client, err = ethclient.Dial(wsURL)

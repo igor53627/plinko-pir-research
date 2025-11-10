@@ -1,0 +1,79 @@
+{{- if .Values.cdnMock.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "plinko-pir.fullname" . }}-cdn-mock
+  labels:
+    {{- include "plinko-pir.componentLabels" (dict "component" "cdn-mock" "root" .) | nindent 4 }}
+spec:
+  replicas: {{ .Values.cdnMock.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "plinko-pir.componentSelectorLabels" (dict "component" "cdn-mock" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "plinko-pir.componentSelectorLabels" (dict "component" "cdn-mock" "root" .) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/cdn-configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.security.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+      # Wait for hint.bin and deltas
+      - name: wait-for-data
+        image: busybox:latest
+        command:
+          - sh
+          - -c
+          - |
+            echo "Waiting for hint.bin and deltas..."
+            while [ ! -f /data/hint.bin ] || [ ! -d /data/deltas ]; do
+              echo "Data files not ready, waiting..."
+              sleep 10
+            done
+            echo "Data files ready"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          readOnly: true
+      containers:
+      - name: cdn-mock
+        image: "{{ .Values.cdnMock.image.repository }}:{{ .Values.cdnMock.image.tag }}"
+        imagePullPolicy: {{ .Values.cdnMock.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.cdnMock.service.port }}
+          protocol: TCP
+        volumeMounts:
+        - name: data
+          mountPath: /data
+          readOnly: true
+        - name: config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        resources:
+          {{- toYaml .Values.cdnMock.resources | nindent 10 }}
+        {{- if .Values.cdnMock.livenessProbe.enabled }}
+        livenessProbe:
+          {{- toYaml .Values.cdnMock.livenessProbe | nindent 10 }}
+        {{- end }}
+        {{- if .Values.cdnMock.readinessProbe.enabled }}
+        readinessProbe:
+          {{- toYaml .Values.cdnMock.readinessProbe | nindent 10 }}
+        {{- end }}
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "plinko-pir.fullname" . }}-data
+      - name: config
+        configMap:
+          name: {{ include "plinko-pir.fullname" . }}-cdn-config
+{{- end }}
