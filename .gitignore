@@ -10,10 +10,13 @@ shared/logs/*
 # Docker
 .docker/
 
-# Node modules (Ambire wallet)
+# Node modules
 services/ambire-wallet/node_modules/
 services/ambire-wallet/dist/
 services/piano-pir-server/node_modules/
+services/rabby-wallet/node_modules/
+services/rabby-wallet/dist/
+node_modules/
 
 # Python
 services/db-generator/__pycache__/

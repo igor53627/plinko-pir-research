@@ -1,9 +1,30 @@
-# FrodoPIR for Ethereum JSON-RPC: Feasibility Analysis
+# Plinko PIR for Ethereum: Research & Implementation
 
-**Research Question**: Can FrodoPIR be practically applied to provide Private Information Retrieval for Ethereum public JSON-RPC endpoints, enabling users to query blockchain data without revealing their queries?
+**Research Question**: Can Plinko PIR (with incremental Plinko updates) be practically applied to provide Private Information Retrieval for Ethereum public JSON-RPC endpoints, enabling users to query blockchain data without revealing their queries?
 
 **Started**: 2025-11-09
-**Status**: Active Investigation
+**Status**: Complete - PoC Implemented
+
+## Project Structure
+
+```
+plinko-pir-research/
+├── services/              # PoC service implementations
+├── data/                  # Binary database files
+├── scripts/               # Utility scripts
+├── docs/                  # Implementation documentation
+├── shared/                # Shared data volumes
+├── research/              # Research artifacts
+│   ├── findings/          # Research findings by phase
+│   ├── POC-IMPLEMENTATION.md
+│   ├── POC-PLINKO-IMPLEMENTATION.md
+│   ├── research-plan.md
+│   └── _summary.md
+├── docker-compose.yml     # Service orchestration
+├── Makefile              # Convenience commands
+├── IMPLEMENTATION.md     # PoC implementation guide
+└── README.md             # This file
+```
 
 ## Hypothesis
 
@@ -253,13 +274,45 @@ Ethereum JSON-RPC is the standard interface for querying blockchain data:
    - Design FrodoPIR provider interface
    - Identify integration points
 
-### Research Outputs
+### Quick Start
 
-- **Technical Report**: Detailed feasibility analysis
-- **Proof of Concept**: Simple implementation for balance queries
-- **Performance Benchmarks**: Real measurements with Ethereum data
-- **Recommendations**: When/where FrodoPIR makes sense for Ethereum
-- **Implementation Guide**: If viable, how to integrate
+### Run the PoC
+
+```bash
+# Build and start all services
+make build
+make start
+
+# Access wallet interface
+open http://localhost:5173
+
+# Run tests
+make test
+```
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for complete setup instructions.
+
+## Research Artifacts
+
+All research findings are located in the [`research/`](research/) directory:
+
+- **[research/findings/](research/findings/)** - Phase-by-phase research results
+- **[research/POC-IMPLEMENTATION.md](research/POC-IMPLEMENTATION.md)** - Original FrodoPIR analysis
+- **[research/POC-PLINKO-IMPLEMENTATION.md](research/POC-PLINKO-IMPLEMENTATION.md)** - Plinko PIR implementation details
+- **[research/research-plan.md](research/research-plan.md)** - Original research plan
+- **[research/_summary.md](research/_summary.md)** - Executive summary
+
+## Implementation
+
+The proof-of-concept demonstrates:
+
+- **Plinko PIR**: Information-theoretic private queries
+- **Plinko Updates**: Incremental O(1) updates (79× speedup)
+- **Ethereum Scale**: 8.4M accounts (Warm Tier)
+- **Real-time Updates**: 12-second block synchronization
+- **Rabby Wallet Integration**: Privacy Mode toggle
+
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for architecture and deployment.
 
 ## Resources
 
