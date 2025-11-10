@@ -1,0 +1,19 @@
+apiVersion: v2
+name: plinko-pir
+description: Plinko PIR PoC - Private Information Retrieval for Ethereum with incremental updates
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - plinko
+  - pir
+  - ethereum
+  - privacy
+  - blockchain
+home: https://github.com/yourusername/plinko-pir-research
+sources:
+  - https://github.com/yourusername/plinko-pir-research
+maintainers:
+  - name: Plinko PIR Team
+    email: contact@example.com
+icon: https://example.com/icon.png

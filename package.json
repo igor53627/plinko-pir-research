@@ -1,0 +1,16 @@
+{
+  "name": "plinko-pir-research",
+  "version": "1.0.0",
+  "description": "**Research Question**: Can FrodoPIR be practically applied to provide Private Information Retrieval for Ethereum public JSON-RPC endpoints, enabling users to query blockchain data without revealing their queries?",
+  "main": "refactor-validation.test.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "vitest": "^4.0.8"
+  }
+}

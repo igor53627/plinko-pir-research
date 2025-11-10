@@ -1,0 +1,17 @@
+{{- if .Values.plinkoPirServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "plinko-pir.fullname" . }}-pir-server
+  labels:
+    {{- include "plinko-pir.componentLabels" (dict "component" "pir-server" "root" .) | nindent 4 }}
+spec:
+  type: {{ .Values.plinkoPirServer.service.type }}
+  ports:
+    - port: {{ .Values.plinkoPirServer.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "plinko-pir.componentSelectorLabels" (dict "component" "pir-server" "root" .) | nindent 4 }}
+{{- end }}
