@@ -1,112 +1,97 @@
-# Quick Start Guide - FrodoPIR Research
+# Quick Start Guide - Plinko PIR PoC
 
-## Immediate Start Options
+## Running the Proof-of-Concept
 
-### Option A: Start Research Now (Recommended)
-
-Use collective agents to begin immediately:
+### Option 1: Using Make (Recommended)
 
 ```bash
-/van "Start Phase 1 of FrodoPIR research: Analyze the protocol and both implementations"
+# Build all services
+make build
+
+# Start the PoC
+make start
+
+# View logs
+make logs
+
+# Access wallet interface
+open http://localhost:5173
+
+# Run tests
+make test
+
+# Clean up
+make reset
 ```
 
-The agents will:
-- Study FrodoPIR protocol details
-- Analyze Rust implementation (brave-experiments)
-- Analyze C++ implementation (itzmeanjan)
-- Document findings
-
-### Option B: Manual Exploration
+### Option 2: Using Docker Compose
 
 ```bash
-cd frodopir-ethereum-rpc-analysis
-./setup.sh  # Clone implementations
-cd src/rust-analysis/frodo-pir
-cargo bench  # Run Rust benchmarks
+# Build and start
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
 
-### Option C: Task Master (Requires Setup)
-
-If you have ANTHROPIC_API_KEY configured:
+### Option 3: First-time Setup Script
 
 ```bash
-# Add to .env or ~/.zshrc:
-export ANTHROPIC_API_KEY="your_key_here"
-
-# Then:
-task-master parse-prd research-plan.md
-task-master expand --all --research
-task-master next
+./scripts/init-poc.sh
 ```
 
-## Research Phases
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup instructions.
 
-**Phase 1** (Days 1-3): Deep Technical Analysis
-- Analyze FrodoPIR protocol
-- Study both implementations
-- Run benchmarks
-- Document performance
+## Research Documentation
 
-**Phase 2** (Days 4-5): Ethereum RPC Analysis  
-- Characterize Ethereum state
-- Analyze query patterns
-- Calculate data sizes
+All research artifacts are in the [`research/`](research/) directory:
 
-**Phase 3** (Days 6-8): Feasibility Mapping
-- Map use cases to FrodoPIR
-- Design database models
-- Calculate parameters
+- **[research/findings/](research/findings/)** - Phase-by-phase research results
+  - Phase 1-7 complete
+  - Technical analysis
+  - Performance benchmarks
+  - Comparative analysis
+- **[research/research-plan.md](research/research-plan.md)** - Original research plan
+- **[research/POC-IMPLEMENTATION.md](research/POC-IMPLEMENTATION.md)** - FrodoPIR analysis
+- **[research/POC-PLINKO-IMPLEMENTATION.md](research/POC-PLINKO-IMPLEMENTATION.md)** - Plinko implementation
 
-**Phase 4** (Days 9-12): Proof of Concept
-- Implement simple balance query
-- Benchmark at scale
-- Document results
+## PoC Architecture
 
-**Phase 5-7**: Update strategies, integration, conclusions
+The implementation consists of 7 services:
 
-## Quick Commands
+1. **Ethereum Mock (Anvil)** - 8.4M pre-funded accounts
+2. **Database Generator** - Extracts account balances
+3. **Piano Hint Generator** - Creates PIR hints
+4. **Plinko Update Service** - Real-time incremental updates
+5. **Plinko PIR Server** - Private query endpoint
+6. **CDN Mock** - Serves hint and delta files
+7. **Rabby Wallet** - User interface with Privacy Mode
+
+## Performance Metrics
+
+- Query Latency: ~5-8ms
+- Update Latency: ~24μs (with cache)
+- Delta Size: ~30 KB per block
+- Hint Download: ~1-2 seconds
+- Information-theoretic privacy guarantee
+
+## Development
 
 ```bash
-# View research plan
-cat research-plan.md
+# Build specific service
+docker-compose build plinko-pir-server
 
-# Setup project
-./setup.sh
+# View service logs
+docker-compose logs -f plinko-pir-server
 
-# Update findings
-vim findings/performance-comparison.md
+# Run privacy tests
+./scripts/test-privacy.sh
 
-# Commit progress
-git add .
-git commit -m "Research: Phase 1 complete"
-git push
+# Run performance tests
+./scripts/test-performance.sh
 ```
 
-## Using Agents
-
-The collective has specialized agents for research:
-
-- `@research-agent` - Documentation research
-- `@infrastructure-implementation-agent` - Build/benchmark setup
-- `@testing-implementation-agent` - Test harness creation
-- `@quality-agent` - Results validation
-
-Use via:
-```bash
-/van "Use @research-agent to analyze FrodoPIR academic paper"
-```
-
-Or directly:
-```
-Use the research-agent to gather FrodoPIR documentation
-```
-
-## Progress Tracking
-
-Document your findings in:
-- `findings/` - Research results
-- `docs/` - Notes and observations
-- Commit regularly to track progress
-- GitHub Actions will auto-update main README
-
-Happy researching!
+See [IMPLEMENTATION.md](IMPLEMENTATION.md) for complete documentation.
