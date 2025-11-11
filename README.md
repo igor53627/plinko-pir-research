@@ -72,7 +72,7 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup.
 | **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/findings/eth-logs-50k-blocks.md) |
 | **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/findings/fixed-size-log-compression.md) |
 
-**External Summary**: [Pimlico PIR Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7) - Comprehensive feasibility study
+**External Summary**: [Plinko PIR Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7) - Comprehensive feasibility study
 
 ### Plinko Update Performance
 
@@ -284,7 +284,7 @@ cd deploy/helm/plinko-pir
 | **Phase 6** | 50K Blocks Analysis | ✅ Complete | [eth-logs-50k-blocks.md](research/findings/eth-logs-50k-blocks.md) |
 | **Phase 7** | Compression Strategies | ✅ Complete | [fixed-size-log-compression.md](research/findings/fixed-size-log-compression.md) |
 
-**External Summary**: [Pimlico's PIR Feasibility Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7)
+**External Summary**: [Plinko PIR Feasibility Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7)
 
 ---
 
@@ -496,7 +496,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 - **GitHub**: https://github.com/igor53627/plinko-pir-research
 - **Plinko Paper**: https://eprint.iacr.org/2024/318
-- **Pimlico Summary**: https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7
+- **Plinko Summary**: https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7
 - **Issues**: https://github.com/igor53627/plinko-pir-research/issues
 
 ---
