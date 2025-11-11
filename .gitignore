@@ -44,3 +44,8 @@ Thumbs.db
 # Test outputs
 test-results/
 coverage/
+
+# Kubernetes credentials
+*.kubeconfig
+*-vke-*.yaml
+.kube/config

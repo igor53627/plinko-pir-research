@@ -1,0 +1,236 @@
+# =============================================================================
+# VULTR KUBERNETES ENGINE (VKE) SIMPLE DEPLOYMENT
+# =============================================================================
+# Initial deployment without domain/ingress - using LoadBalancer services
+# Usage: helm install plinko-pir ./plinko-pir -f values-vke-simple.yaml
+
+# Global settings for Vultr
+global:
+  # Vultr Block Storage storage class
+  storageClass: "vultr-block-storage"
+
+  # No domain required for initial deployment
+  domain: ""
+
+  # TLS disabled for initial deployment
+  tls:
+    enabled: false
+    issuer: ""
+
+# =============================================================================
+# PERSISTENT STORAGE (VULTR BLOCK STORAGE)
+# =============================================================================
+persistence:
+  enabled: true
+  # Vultr Block Storage - High Performance SSD
+  storageClass: "vultr-block-storage"
+  accessMode: ReadWriteOnce  # Changed from ReadWriteMany to ReadWriteOnce for Vultr
+  size: 20Gi
+  annotations:
+    volume.beta.kubernetes.io/storage-class: "vultr-block-storage"
+    # Keep volume on chart deletion for safety
+    helm.sh/resource-policy: "keep"
+
+# =============================================================================
+# SERVICE 1: ETH-MOCK (ANVIL) - USING PUBLIC IMAGE
+# =============================================================================
+ethMock:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/foundry-rs/foundry
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8545
+
+  config:
+    accounts: 100000  # Reduced for small cluster - 100K accounts
+    balance: "1000"  # 1000 ETH in ETH units (not wei)
+    blockTime: 12
+
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+
+# =============================================================================
+# SERVICE 2: DB-GENERATOR - NEEDS LOCAL IMAGE OR REGISTRY
+# =============================================================================
+dbGenerator:
+  enabled: false  # Disable until images are in registry
+
+  image:
+    repository: plinko-pir/db-generator
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# =============================================================================
+# SERVICE 3: PLINKO-HINT-GENERATOR
+# =============================================================================
+plinkoHintGenerator:
+  enabled: false  # Disable until images are in registry
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# =============================================================================
+# SERVICE 4: PLINKO-UPDATE-SERVICE
+# =============================================================================
+plinkoUpdateService:
+  enabled: false  # Disable until images are in registry
+  replicaCount: 1
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "250m"
+
+# =============================================================================
+# SERVICE 5: PLINKO-PIR-SERVER
+# =============================================================================
+plinkoPirServer:
+  enabled: false  # Disable until images are in registry
+  replicaCount: 1
+
+  service:
+    type: LoadBalancer  # Expose directly via LoadBalancer
+    port: 3000
+
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+  autoscaling:
+    enabled: false  # Disabled for small cluster
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# =============================================================================
+# SERVICE 6: CDN-MOCK
+# =============================================================================
+cdnMock:
+  enabled: false  # Disable until images are in registry
+  replicaCount: 1
+
+  service:
+    type: LoadBalancer  # Expose directly via LoadBalancer
+    port: 8080
+
+  config:
+    gzipEnabled: true
+    corsEnabled: true
+    cacheMaxAge: 3600
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  autoscaling:
+    enabled: false  # Disabled for small cluster
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+# =============================================================================
+# SERVICE 7: RABBY-WALLET
+# =============================================================================
+rabbyWallet:
+  enabled: false  # Disable until images are in registry
+  replicaCount: 1
+
+  service:
+    type: LoadBalancer  # Expose directly via LoadBalancer
+    port: 80
+
+  config:
+    # Will be set to LoadBalancer IPs after deployment
+    pirServerUrl: ""
+    cdnUrl: ""
+    fallbackRpc: "https://eth.llamarpc.com"
+
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+  autoscaling:
+    enabled: false  # Disabled for small cluster
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+# =============================================================================
+# INGRESS DISABLED FOR INITIAL DEPLOYMENT
+# =============================================================================
+ingress:
+  enabled: false  # Use LoadBalancer services instead
+
+# =============================================================================
+# SECURITY
+# =============================================================================
+security:
+  podSecurityPolicy:
+    enabled: false
+
+  podSecurityContext:
+    runAsNonRoot: false
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+
+# =============================================================================
+# MONITORING (OPTIONAL)
+# =============================================================================
+monitoring:
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+# =============================================================================
+# DEBUGGING
+# =============================================================================
+debug:
+  enabled: true
+  logLevel: "info"

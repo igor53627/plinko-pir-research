@@ -45,6 +45,7 @@ open http://localhost:5173
 
 ### Option 2: Kubernetes (Production-like - 15 minutes)
 
+#### Local Development (Kind)
 ```bash
 cd deploy/helm/plinko-pir
 
@@ -55,7 +56,17 @@ cd deploy/helm/plinko-pir
 open http://localhost:30173
 ```
 
-See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup.
+#### Production Deployment (Vultr VKE)
+```bash
+# Deploy to Vultr Kubernetes Engine
+./deploy/helm/plinko-pir/scripts/deploy-vke.sh \
+  --kubeconfig ~/path/to/vke-kubeconfig.yaml \
+  --namespace plinko-pir
+
+# Access via LoadBalancer IPs (shown after deployment)
+```
+
+See [VULTR_DEPLOYMENT.md](deploy/VULTR_DEPLOYMENT.md) for production deployment guide and [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup.
 
 ---
 

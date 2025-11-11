@@ -1,0 +1,292 @@
+name: Deploy to Vultr VKE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'deploy/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy-vke.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: ${{ secrets.REGISTRY || github.actor }}
+  HELM_RELEASE: plinko-pir
+  NAMESPACE: plinko-pir
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata
+        id: meta
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Build and push db-generator
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/db-generator
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-db-generator:latest
+            ${{ env.REGISTRY }}/plinko-db-generator:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push hint-generator
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/piano-hint-generator
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-hint-generator:latest
+            ${{ env.REGISTRY }}/plinko-hint-generator:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push update-service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/plinko-update-service
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-update-service:latest
+            ${{ env.REGISTRY }}/plinko-update-service:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push pir-server
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/piano-pir-server
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-pir-server:latest
+            ${{ env.REGISTRY }}/plinko-pir-server:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push cdn-mock
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/cdn-mock
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-cdn-mock:latest
+            ${{ env.REGISTRY }}/plinko-cdn-mock:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push rabby-wallet
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/rabby-wallet
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/plinko-rabby-wallet:latest
+            ${{ env.REGISTRY }}/plinko-rabby-wallet:${{ steps.meta.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to VKE
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.34.0'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.VKE_KUBECONFIG }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster connectivity
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create values override file
+        run: |
+          cat > /tmp/values-ci.yaml <<EOF
+          # Image registry override
+          dbGenerator:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-db-generator
+              tag: latest
+
+          plinkoHintGenerator:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-hint-generator
+              tag: latest
+
+          plinkoUpdateService:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-update-service
+              tag: latest
+
+          plinkoPirServer:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-pir-server
+              tag: latest
+
+          cdnMock:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-cdn-mock
+              tag: latest
+
+          rabbyWallet:
+            image:
+              repository: ${{ env.REGISTRY }}/plinko-rabby-wallet
+              tag: latest
+          EOF
+
+      - name: Deploy with Helm
+        run: |
+          cd deploy/helm/plinko-pir
+          helm upgrade --install ${{ env.HELM_RELEASE }} . \
+            --namespace ${{ env.NAMESPACE }} \
+            --create-namespace \
+            -f values-vke-simple.yaml \
+            -f /tmp/values-ci.yaml \
+            --wait \
+            --timeout 15m \
+            --atomic \
+            --cleanup-on-fail
+
+      - name: Verify deployment
+        run: |
+          echo "=== Deployment Status ==="
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Services ==="
+          kubectl get services -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== PVC Status ==="
+          kubectl get pvc -n ${{ env.NAMESPACE }}
+
+      - name: Get LoadBalancer IPs
+        id: lb_ips
+        run: |
+          echo "Waiting for LoadBalancer IPs..."
+          sleep 30
+
+          PIR_SERVER_IP=$(kubectl get svc plinko-pir-server -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
+          CDN_IP=$(kubectl get svc cdn-mock -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
+          WALLET_IP=$(kubectl get svc rabby-wallet -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "pending")
+
+          echo "pir_server_ip=$PIR_SERVER_IP" >> $GITHUB_OUTPUT
+          echo "cdn_ip=$CDN_IP" >> $GITHUB_OUTPUT
+          echo "wallet_ip=$WALLET_IP" >> $GITHUB_OUTPUT
+
+          echo "PIR Server: http://$PIR_SERVER_IP:3000"
+          echo "CDN: http://$CDN_IP:8080"
+          echo "Wallet: http://$WALLET_IP"
+
+      - name: Health check
+        run: |
+          echo "Running health checks..."
+
+          # Wait for services to be ready
+          sleep 60
+
+          # Check PIR server
+          PIR_IP="${{ steps.lb_ips.outputs.pir_server_ip }}"
+          if [ "$PIR_IP" != "pending" ]; then
+            curl -f http://$PIR_IP:3000/health || echo "PIR Server health check failed"
+          fi
+
+          # Check CDN
+          CDN_IP="${{ steps.lb_ips.outputs.cdn_ip }}"
+          if [ "$CDN_IP" != "pending" ]; then
+            curl -f -I http://$CDN_IP:8080/health || echo "CDN health check failed"
+          fi
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Release**: ${{ env.HELM_RELEASE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Namespace**: ${{ env.NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Access URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Wallet UI**: http://${{ steps.lb_ips.outputs.wallet_ip }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PIR Server**: http://${{ steps.lb_ips.outputs.pir_server_ip }}:3000" >> $GITHUB_STEP_SUMMARY
+          echo "- **CDN**: http://${{ steps.lb_ips.outputs.cdn_ip }}:8080" >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "Deployment failed, rolling back..."
+          helm rollback ${{ env.HELM_RELEASE }} -n ${{ env.NAMESPACE }} || true
+          kubectl get events -n ${{ env.NAMESPACE }} --sort-by='.lastTimestamp' | tail -20
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always()
+
+    steps:
+      - name: Deployment notification
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "✅ Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi
+
+          # Add Slack/Discord notification here if needed
+          # Example:
+          # curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+          #   -H 'Content-Type: application/json' \
+          #   -d '{"text":"Deployment ${{ needs.deploy.result }}"}'
