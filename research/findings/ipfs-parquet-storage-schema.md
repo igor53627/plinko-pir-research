@@ -1264,7 +1264,7 @@ Cost:
 **Related Documents**:
 - [Fixed-Size Log Compression](./fixed-size-log-compression.md)
 - [50K Blocks eth_getLogs Analysis](./eth-logs-50k-blocks.md)
-- [Cryo-Reth Integration PRD](../cryo-reth-integration-prd.md)
+- [Cryo-Reth Integration Spec](../cryo-reth-integration-spec.md)
 
 **Implementation Status**: Architecture finalized, ready for PoC development
 
