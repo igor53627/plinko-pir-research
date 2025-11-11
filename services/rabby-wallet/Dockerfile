@@ -6,7 +6,10 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json ./
-RUN npm install
+
+# BuildKit cache mount for npm cache
+RUN --mount=type=cache,target=/root/.npm \
+    npm install --prefer-offline --no-audit
 
 # Copy source code
 COPY . .

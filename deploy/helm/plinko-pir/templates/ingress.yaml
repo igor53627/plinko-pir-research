@@ -3,6 +3,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "plinko-pir.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "plinko-pir.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
@@ -13,29 +14,39 @@ spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
   {{- end }}
-  {{- if .Values.ingress.tls }}
-  tls:
-    {{- range .Values.ingress.tls }}
-    - hosts:
-        {{- range .hosts }}
-        - {{ . | quote }}
-        {{- end }}
-      secretName: {{ .secretName }}
-    {{- end }}
-  {{- end }}
   rules:
-    {{- range .Values.ingress.hosts }}
-    - host: {{ .host | quote }}
-      http:
+    - http:
         paths:
-          {{- range .paths }}
-          - path: {{ .path }}
-            pathType: {{ .pathType }}
+          # PIR Server API (must be before / to match first)
+          {{- if .Values.plinkoPirServer.enabled }}
+          - path: /api
+            pathType: Prefix
             backend:
               service:
-                name: {{ include "plinko-pir.fullname" $ }}-{{ .service }}
+                name: {{ include "plinko-pir.fullname" . }}-pir-server
                 port:
-                  number: {{ .port }}
+                  number: 3000
           {{- end }}
-    {{- end }}
+
+          # CDN Mock
+          {{- if .Values.cdnMock.enabled }}
+          - path: /cdn
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "plinko-pir.fullname" . }}-cdn-mock
+                port:
+                  number: 8080
+          {{- end }}
+
+          # Wallet UI - Root path (catch-all, must be last)
+          {{- if .Values.rabbyWallet.enabled }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "plinko-pir.fullname" . }}-rabby-wallet
+                port:
+                  number: 80
+          {{- end }}
 {{- end }}

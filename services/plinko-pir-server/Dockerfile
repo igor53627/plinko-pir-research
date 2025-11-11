@@ -6,7 +6,10 @@ WORKDIR /build
 
 # Copy Go module files
 COPY go.mod ./
-RUN go mod download
+
+# BuildKit cache mount for Go module cache
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 # Copy source code
 COPY *.go ./
