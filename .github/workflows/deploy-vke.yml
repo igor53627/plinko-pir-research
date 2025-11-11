@@ -57,6 +57,7 @@ jobs:
         with:
           context: ./services/db-generator
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-db-generator:latest
             ${{ env.REGISTRY }}/plinko-db-generator:${{ steps.meta.outputs.sha_short }}
@@ -66,8 +67,9 @@ jobs:
       - name: Build and push hint-generator
         uses: docker/build-push-action@v5
         with:
-          context: ./services/piano-hint-generator
+          context: ./services/plinko-hint-generator
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-hint-generator:latest
             ${{ env.REGISTRY }}/plinko-hint-generator:${{ steps.meta.outputs.sha_short }}
@@ -79,6 +81,7 @@ jobs:
         with:
           context: ./services/plinko-update-service
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-update-service:latest
             ${{ env.REGISTRY }}/plinko-update-service:${{ steps.meta.outputs.sha_short }}
@@ -88,8 +91,9 @@ jobs:
       - name: Build and push pir-server
         uses: docker/build-push-action@v5
         with:
-          context: ./services/piano-pir-server
+          context: ./services/plinko-pir-server
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-pir-server:latest
             ${{ env.REGISTRY }}/plinko-pir-server:${{ steps.meta.outputs.sha_short }}
@@ -101,6 +105,7 @@ jobs:
         with:
           context: ./services/cdn-mock
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-cdn-mock:latest
             ${{ env.REGISTRY }}/plinko-cdn-mock:${{ steps.meta.outputs.sha_short }}
@@ -112,6 +117,7 @@ jobs:
         with:
           context: ./services/rabby-wallet
           push: true
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/plinko-rabby-wallet:latest
             ${{ env.REGISTRY }}/plinko-rabby-wallet:${{ steps.meta.outputs.sha_short }}
