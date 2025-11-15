@@ -46,13 +46,12 @@ func NewPlinkoUpdateManager(database []uint64, dbSize, chunkSize, setSize uint64
 	// Domain: n = DBSize (number of database entries)
 	// Range: m = SetSize (number of chunks/hint sets)
 
-	// Create iPRF with deterministic key for testing (reproducible)
+	// Create iPRF with deterministic key for testing
 	var key PrfKey128
 	for i := 0; i < 16; i++ {
 		key[i] = byte(i)
 	}
 
-	// Use base iPRF (proven to work correctly)
 	iprf := NewIPRF(key, dbSize, setSize)
 
 	return &PlinkoUpdateManager{
