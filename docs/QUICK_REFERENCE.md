@@ -175,16 +175,14 @@ docker-compose build ambire-wallet
 docker-compose up -d ambire-wallet
 ```
 
-### Database generation stuck
+### Snapshot build stuck
 
 ```bash
-# Check Anvil is responding
-curl -X POST http://localhost:8545 \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+# Verify raw parquet diffs
+ls raw_balances | head
 
-# View generator logs
-docker logs plinko-pir-db-generator
+# Re-run snapshot builder
+python3 scripts/build_database_from_parquet.py --input raw_balances --output data
 ```
 
 ### PIR queries failing
@@ -193,8 +191,8 @@ docker logs plinko-pir-db-generator
 # Test PIR server
 curl http://localhost:3000/health
 
-# Check hint exists
-docker exec plinko-pir-server ls -lh /data/hint.bin
+# Check canonical DB exists
+docker exec plinko-pir-server ls -lh /data/database.bin
 
 # View server logs
 docker logs plinko-pir-server

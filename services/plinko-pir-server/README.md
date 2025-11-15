@@ -12,8 +12,10 @@
 
 ## Configuration
 
-- **Input**: `/data/hint.bin` (Piano-formatted database)
-- **HTTP Port**: 3000
+- **Input**: `/data/database.bin` (canonical Balance DB built via `scripts/build_database_from_parquet.py`)
+- **HTTP Port**: Defaults to `3000`; override with `PLINKO_PIR_SERVER_PORT`, `SERVER_PORT`, or `PORT`
+- **Database Path**: Defaults to `/data/database.bin`; override with `PLINKO_PIR_DATABASE_PATH`, `PLINKO_PIR_DB_PATH`, `DATABASE_PATH`, or `DB_PATH` (legacy `PLINKO_PIR_HINT_PATH` continues to point to a database snapshot)
+- **Database Wait Timeout**: Defaults to 120s; override with `PLINKO_PIR_DATABASE_TIMEOUT_SECONDS`, `PLINKO_PIR_DB_TIMEOUT_SECONDS`, `DATABASE_TIMEOUT_SECONDS`, or `DB_TIMEOUT_SECONDS` (set to 0 to disable waiting)
 - **Query Latency**: <10ms (from research: ~5ms for 8.4M database)
 - **Database**: In-memory (64 MB for 8.4M accounts)
 
@@ -129,7 +131,7 @@ docker-compose up piano-pir-server
 # Build service
 docker-compose build piano-pir-server
 
-# Run service (waits for hint.bin)
+# Run service (waits for database.bin)
 docker-compose run --rm -p 3000:3000 piano-pir-server
 
 # Test health endpoint
@@ -145,6 +147,25 @@ curl -X POST http://localhost:3000/query/fullset \
   -H "Content-Type: application/json" \
   -d '{"prf_key": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}'
 ```
+
+## Testing
+
+Run unit tests for the Go services:
+```bash
+cd services/plinko-pir-server
+go test ./...
+
+cd ../plinko-update-service
+go test ./...
+```
+
+Run the browser PRF tests (shared AES vectors):
+```bash
+cd services/rabby-wallet
+npm install
+npm test -- --run
+```
+
 
 ## Privacy Implementation
 
@@ -184,19 +205,15 @@ Plinko PIR provides **information-theoretic privacy**:
 
 ### Database Loading
 
-Loads hint.bin into memory for fast queries:
+Loads the canonical database snapshot and derives Plinko PIR parameters locally:
 
 ```go
-// Read hint.bin (32-byte header + database)
-data := readFile("/data/hint.bin")
+data := readFile("/data/database.bin")
+dbEntries := uint64(len(data) / 8)
 
-// Extract metadata
-dbSize := binary.LittleEndian.Uint64(data[0:8])
-chunkSize := binary.LittleEndian.Uint64(data[8:16])
-setSize := binary.LittleEndian.Uint64(data[16:24])
-
-// Load database into memory
-database := parseDatabase(data[32:])
+chunkSize, setSize := derivePlinkoParams(dbEntries)
+database := make([]uint64, chunkSize*setSize)
+copy(database, parseEntries(data))
 ```
 
 ### Full Set Query Algorithm
@@ -250,10 +267,10 @@ func (prs *PRSet) Expand(setSize, chunkSize uint64) []uint64 {
 
 ## Troubleshooting
 
-**Problem**: Timeout waiting for hint.bin
-- Ensure piano-hint-generator completed successfully
-- Check hint-generator logs for errors
-- Verify shared volume permissions
+**Problem**: Timeout waiting for database.bin
+- Ensure `scripts/build_database_from_parquet.py` produced up-to-date `data/database.bin`
+- Check generator logs for errors
+- Verify filesystem permissions for the canonical DB snapshot
 
 **Problem**: Slow queries (>50ms)
 - Check database loaded in memory (not reading from disk)
@@ -367,7 +384,7 @@ Plinko PIR server is stateless (except database):
 ## Next Steps
 
 After Plinko PIR Server:
-1. **CDN Mock**: Serve hints/deltas for client downloads
+1. **CDN Mock**: Serve public snapshot packages + delta feeds for client downloads
 2. **Ambire Wallet**: Client implementation with Privacy Mode
 3. **Integration Testing**: Verify end-to-end private queries
 4. **Performance Testing**: Validate <10ms latency target

@@ -1,110 +1,128 @@
+//go:build !bench
+
 package main
 
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 const (
-	// Database configuration
-	DBSize        = 8388608 // 2^23 accounts
 	DBEntrySize   = 8
 	DBEntryLength = 1 // DBEntrySize / 8
 
-	// Plinko configuration
-	CacheEnabled = true // Enable 79x speedup
-	CacheSizeMB  = 64   // 8.4M × 8 bytes
-
-	// Ethereum configuration
+	CacheEnabled      = true
 	BlockProcessDelay = 100 * time.Millisecond
-
-	// Output configuration
-	DeltaDir  = "/data/deltas"
-	HintPath  = "/data/hint.bin"
-	HealthPort = "3001"
-
-	// Simulation (for PoC - in production, detect actual changes)
-	SimulateChanges       = true
-	ChangesPerBlock       = 2000 // Simulated account changes per block
+	ChangesPerBlock   = 2000 // Simulated account changes per block
 )
-
-// Get RPC URL from environment or use default
-func getRPCURL() string {
-	if rpcURL := os.Getenv("RPC_URL"); rpcURL != "" {
-		return rpcURL
-	}
-	return "http://eth-mock:8545" // Default for docker-compose
-}
 
 type DBEntry [DBEntryLength]uint64
 
 type PlinkoUpdateService struct {
-	client         *ethclient.Client
-	database       []uint64 // In-memory database
-	updateManager  *PlinkoUpdateManager
-	blockHeight    uint64
+	client          *ethclient.Client
+	database        []uint64 // In-memory database
+	updateManager   *PlinkoUpdateManager
+	blockHeight     uint64
 	deltasGenerated uint64
+	cfg             Config
+	dbSize          uint64
+	chunkSize       uint64
+	setSize         uint64
+	snapshotVersion string
+	addressIndex    map[string]uint64
+	useSimulated    bool
+	chainID         *big.Int
 }
 
 func main() {
 	log.Println("========================================")
 	log.Println("Plinko Update Service")
 	log.Println("========================================")
-	log.Printf("Database: %d entries (%d MB)\n", DBSize, DBSize*DBEntrySize/1024/1024)
-	log.Printf("Cache mode: %v (speedup: 79x)\n", CacheEnabled)
-	log.Printf("Simulated changes per block: %d\n", ChangesPerBlock)
-	log.Println()
 
-	// Wait for hint.bin to exist
-	waitForHint()
+	cfg := LoadConfig()
+	log.Printf("Configuration: database=%s, public_root=%s, delta_dir=%s, rpc=%s, simulated_updates=%v\n",
+		cfg.DatabasePath, cfg.PublicRoot, cfg.DeltaOutputDir, cfg.RPCURL, cfg.UseSimulated)
 
-	// Load hint/database
-	log.Println("Loading database from hint.bin...")
-	database, chunkSize, setSize := loadDatabase()
-	log.Printf("Loaded %d entries (ChunkSize: %d, SetSize: %d)\n",
-		len(database)/DBEntryLength, chunkSize, setSize)
+	waitForDatabase(cfg.DatabasePath, cfg.DatabaseWaitTimeout)
+
+	log.Println("Loading canonical database snapshot...")
+	database, dbSize, chunkSize, setSize := loadDatabase(cfg.DatabasePath)
+	log.Printf("Loaded database: %d entries (ChunkSize: %d, SetSize: %d)\n",
+		dbSize, chunkSize, setSize)
+
+	addressIndex, err := loadAddressMapping(cfg.AddressMappingPath)
+	if err != nil {
+		log.Fatalf("Failed to read address-mapping: %v", err)
+	}
+	log.Printf("Loaded %d address mappings\n", len(addressIndex))
+
+	// Publish snapshot + manifest to public artifacts
+	if err := os.MkdirAll(cfg.PublicSnapshotsDir(), 0o755); err != nil {
+		log.Fatalf("Failed to create snapshots directory: %v", err)
+	}
+
+	version, err := publishSnapshot(cfg, cfg.DatabasePath, dbSize, chunkSize, setSize)
+	if err != nil {
+		log.Fatalf("Failed to publish snapshot: %v", err)
+	}
+	log.Printf("Published snapshot version %s\n", version)
+
+	if err := ensureAddressMappingPublished(cfg.AddressMappingPath, cfg.PublicAddressMappingPath()); err != nil {
+		log.Fatalf("Failed to publish address-mapping.bin: %v", err)
+	}
+	log.Println("Address mapping exported for CDN")
 
 	// Create Plinko update manager
 	log.Println("Initializing Plinko Update Manager...")
-	pm := NewPlinkoUpdateManager(database, chunkSize, setSize)
+	pm := NewPlinkoUpdateManager(database, dbSize, chunkSize, setSize)
 
 	// Enable cache mode
 	if CacheEnabled {
 		log.Println("Building update cache...")
 		cacheDuration := pm.EnableCacheMode()
-		log.Printf("✅ Cache mode enabled in %v\n", cacheDuration)
-		log.Printf("   Memory usage: %d MB\n", CacheSizeMB)
+		cacheMB := float64(dbSize*DBEntrySize) / 1024 / 1024
+		log.Printf("✅ Cache mode enabled in %v (memory: %.1f MB)\n", cacheDuration, cacheMB)
 		log.Println()
 	}
 
 	// Create delta directory
-	if err := os.MkdirAll(DeltaDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.DeltaOutputDir, 0o755); err != nil {
 		log.Fatalf("Failed to create delta directory: %v", err)
 	}
 
-	// Start health check server
-	go startHealthServer()
-
 	// Create service
 	service := &PlinkoUpdateService{
-		database:       database,
-		updateManager:  pm,
-		blockHeight:    0,
+		database:        database,
+		updateManager:   pm,
+		blockHeight:     0,
 		deltasGenerated: 0,
+		cfg:             cfg,
+		dbSize:          dbSize,
+		chunkSize:       chunkSize,
+		setSize:         setSize,
+		snapshotVersion: version,
+		addressIndex:    addressIndex,
+		useSimulated:    cfg.UseSimulated,
 	}
 
+	// Start health check server
+	go service.startHealthServer()
+
 	// Connect to Ethereum
-	log.Printf("Connecting to Anvil at %s...\n", getRPCURL())
+	log.Printf("Connecting to Ethereum RPC at %s...\n", cfg.RPCURL)
 	if err := service.connectToEthereum(); err != nil {
 		log.Fatalf("Failed to connect to Ethereum: %v", err)
 	}
@@ -120,81 +138,69 @@ func main() {
 	service.monitorBlocks()
 }
 
-func waitForHint() {
-	log.Println("Waiting for hint.bin...")
-	for i := 0; i < 120; i++ {
-		if _, err := os.Stat(HintPath); err == nil {
-			log.Println("✅ hint.bin found")
+func waitForDatabase(path string, timeout time.Duration) {
+	log.Printf("Waiting for database.bin at %s...\n", path)
+	if timeout <= 0 {
+		if _, err := os.Stat(path); err != nil {
+			log.Fatalf("database file %s not found and timeout disabled", path)
+		}
+		log.Println("✅ database file found")
+		return
+	}
+
+	start := time.Now()
+	for {
+		if _, err := os.Stat(path); err == nil {
+			log.Println("✅ database file found")
 			return
 		}
-		if i%10 == 0 && i > 0 {
-			log.Printf("  Still waiting... (%d/120s)\n", i)
+		if time.Since(start) >= timeout {
+			log.Fatalf("Timeout waiting for database file at %s", path)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(time.Second)
 	}
-	log.Fatal("Timeout waiting for hint.bin")
 }
 
-func loadDatabase() ([]uint64, uint64, uint64) {
-	data, err := os.ReadFile(HintPath)
+func loadDatabase(path string) ([]uint64, uint64, uint64, uint64) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatalf("Failed to read hint.bin: %v", err)
+		log.Fatalf("Failed to read database: %v", err)
 	}
 
-	// Read metadata header
-	if len(data) < 32 {
-		log.Fatal("Invalid hint.bin: too small for header")
+	if len(data)%DBEntrySize != 0 {
+		log.Fatalf("Invalid database file size %d (not multiple of %d)", len(data), DBEntrySize)
 	}
 
-	dbSize := binary.LittleEndian.Uint64(data[0:8])
-	chunkSize := binary.LittleEndian.Uint64(data[8:16])
-	setSize := binary.LittleEndian.Uint64(data[16:24])
+	dbEntries := len(data) / DBEntrySize
+	dbSize := uint64(dbEntries)
 
-	log.Printf("Hint metadata: DBSize=%d, ChunkSize=%d, SetSize=%d\n",
-		dbSize, chunkSize, setSize)
+	chunkSize, setSize := derivePlinkoParams(dbSize)
+	totalEntries := chunkSize * setSize
 
-	// Extract database (skip 32-byte header)
-	dbBytes := data[32:]
-	dbEntries := len(dbBytes) / DBEntrySize
-
-	database := make([]uint64, dbEntries)
+	database := make([]uint64, totalEntries)
 	for i := 0; i < dbEntries; i++ {
-		database[i] = binary.LittleEndian.Uint64(dbBytes[i*DBEntrySize : (i+1)*DBEntrySize])
+		database[i] = binary.LittleEndian.Uint64(data[i*DBEntrySize : (i+1)*DBEntrySize])
 	}
 
-	return database, chunkSize, setSize
+	return database, dbSize, chunkSize, setSize
 }
 
 func (s *PlinkoUpdateService) connectToEthereum() error {
-	var err error
-	// Get RPC URL from environment
-	rpcBaseURL := getRPCURL()
-
-	// Try WebSocket first (replace http:// with ws://)
-	wsURL := "ws://" + rpcBaseURL[7:] // Skip "http://" prefix
-	if rpcBaseURL[:7] == "https:/" {
-		wsURL = "wss://" + rpcBaseURL[8:] // Skip "https://" prefix
+	client, err := dialEthereumClient(s.cfg.RPCURL, s.cfg.RPCToken)
+	if err != nil {
+		return err
 	}
-	httpURL := rpcBaseURL
+	s.client = client
 
-	for i := 0; i < 10; i++ {
-		s.client, err = ethclient.Dial(wsURL)
-		if err == nil {
-			return nil
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-		log.Printf("WebSocket connection failed, trying HTTP...")
-		s.client, err = ethclient.Dial(httpURL)
-		if err == nil {
-			log.Printf("⚠️  Using HTTP polling (WebSocket unavailable)")
-			return nil
-		}
-
-		log.Printf("Connection attempt %d/10 failed, retrying...\n", i+1)
-		time.Sleep(2 * time.Second)
+	chainID, err := s.client.ChainID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch chain ID: %w", err)
 	}
-
-	return fmt.Errorf("failed to connect after 10 attempts: %w", err)
+	s.chainID = chainID
+	return nil
 }
 
 func (s *PlinkoUpdateService) monitorBlocks() {
@@ -233,8 +239,8 @@ func (s *PlinkoUpdateService) processBlock(ctx context.Context, blockNumber uint
 		return fmt.Errorf("failed to get block header: %w", err)
 	}
 
-	// Simulate account changes (in production, detect actual changes)
-	updates := s.detectChanges(blockNumber, header)
+	// Detect updates for this block
+	updates := s.detectChanges(ctx, blockNumber, header)
 
 	if len(updates) == 0 {
 		// No changes detected
@@ -243,9 +249,10 @@ func (s *PlinkoUpdateService) processBlock(ctx context.Context, blockNumber uint
 
 	// Generate hint deltas using Plinko
 	deltas, updateDuration := s.updateManager.ApplyUpdates(updates)
+	recordBatch(len(updates), updateDuration)
 
 	// Save delta file
-	deltaPath := filepath.Join(DeltaDir, fmt.Sprintf("delta-%06d.bin", blockNumber))
+	deltaPath := filepath.Join(s.cfg.DeltaOutputDir, fmt.Sprintf("delta-%06d.bin", blockNumber))
 	if err := saveDelta(deltaPath, deltas); err != nil {
 		return fmt.Errorf("failed to save delta: %w", err)
 	}
@@ -257,23 +264,21 @@ func (s *PlinkoUpdateService) processBlock(ctx context.Context, blockNumber uint
 	log.Printf("Block %d: %d changes, %d deltas, update: %v, total: %v\n",
 		blockNumber, len(updates), len(deltas),
 		updateDuration, blockDuration)
+	recordBlock(blockNumber, len(updates), blockDuration)
 
 	return nil
 }
 
-func (s *PlinkoUpdateService) detectChanges(blockNumber uint64, header *types.Header) []DBUpdate {
-	// PoC: Simulate account changes
-	// In production: parse block transactions and detect balance/state changes
-
-	if !SimulateChanges {
-		return nil
+func (s *PlinkoUpdateService) detectChanges(ctx context.Context, blockNumber uint64, header *types.Header) []DBUpdate {
+	if !s.useSimulated {
+		return s.detectRPCChanges(ctx, blockNumber, header)
 	}
 
 	updates := make([]DBUpdate, ChangesPerBlock)
 
 	// Simulate deterministic changes based on block number
 	for i := 0; i < ChangesPerBlock; i++ {
-		index := uint64((blockNumber*ChangesPerBlock + uint64(i)) % DBSize)
+		index := uint64((blockNumber*ChangesPerBlock + uint64(i)) % s.dbSize)
 
 		// Read old value
 		oldValue := s.readDBEntry(index)
@@ -286,6 +291,65 @@ func (s *PlinkoUpdateService) detectChanges(blockNumber uint64, header *types.He
 			OldValue: oldValue,
 			NewValue: newValue,
 		}
+	}
+
+	return updates
+}
+
+func (s *PlinkoUpdateService) detectRPCChanges(ctx context.Context, blockNumber uint64, header *types.Header) []DBUpdate {
+	if s.client == nil || s.chainID == nil {
+		log.Println("Ethereum client not initialized; cannot fetch live updates")
+		return nil
+	}
+
+	block, err := s.client.BlockByNumber(ctx, new(big.Int).SetUint64(blockNumber))
+	if err != nil {
+		log.Printf("Failed to load block %d: %v\n", blockNumber, err)
+		return nil
+	}
+
+	addresses := make(map[string]struct{})
+	signer := types.LatestSignerForChainID(s.chainID)
+
+	for _, tx := range block.Transactions() {
+		if from, err := types.Sender(signer, tx); err == nil {
+			addresses[strings.ToLower(from.Hex())] = struct{}{}
+		}
+		if to := tx.To(); to != nil {
+			addresses[strings.ToLower(to.Hex())] = struct{}{}
+		}
+	}
+
+	if len(addresses) == 0 {
+		return nil
+	}
+
+	blockRef := new(big.Int).SetUint64(blockNumber)
+	updates := make([]DBUpdate, 0, len(addresses))
+
+	for addrHex := range addresses {
+		index, ok := s.addressIndex[addrHex]
+		if !ok {
+			continue
+		}
+
+		balance, err := s.client.BalanceAt(ctx, common.HexToAddress(addrHex), blockRef)
+		if err != nil {
+			log.Printf("BalanceAt failed for %s: %v\n", addrHex, err)
+			continue
+		}
+
+		oldValue := s.readDBEntry(index)
+		newValue := DBEntry{balance.Uint64()}
+		if oldValue[0] == newValue[0] {
+			continue
+		}
+
+		updates = append(updates, DBUpdate{
+			Index:    index,
+			OldValue: oldValue,
+			NewValue: newValue,
+		})
 	}
 
 	return updates
@@ -336,20 +400,24 @@ func boolToUint64(b bool) uint64 {
 	return 0
 }
 
-func startHealthServer() {
+func (s *PlinkoUpdateService) startHealthServer() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// Check if delta directory exists
-		if _, err := os.Stat(DeltaDir); os.IsNotExist(err) {
+		if _, err := os.Stat(s.cfg.DeltaOutputDir); os.IsNotExist(err) {
 			http.Error(w, "Delta directory not ready", http.StatusServiceUnavailable)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy","service":"plinko-update"}`)
+		fmt.Fprintf(w, `{"status":"healthy","service":"plinko-update","snapshot_version":"%s"}`, s.snapshotVersion)
 	})
 
-	log.Printf("Health check server listening on :%s\n", HealthPort)
-	if err := http.ListenAndServe(":"+HealthPort, nil); err != nil {
+	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(snapshotMetrics())
+	})
+
+	log.Printf("Health check server listening on :%s\n", s.cfg.HealthPort)
+	if err := http.ListenAndServe(":"+s.cfg.HealthPort, nil); err != nil {
 		log.Printf("Health server error: %v\n", err)
 	}
 }

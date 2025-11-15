@@ -109,13 +109,6 @@ else
     TESTS_TOTAL=$((TESTS_TOTAL + 1))
 fi
 
-if docker ps | grep -q "plinko-pir-db-generator"; then
-    test_docker_internal "plinko-pir-db-generator" "http://eth-mock:8545" "DB Generator → Anvil"
-else
-    echo -e "${YELLOW}⚠ SKIP${NC} DB Generator container completed (expected)"
-    TESTS_TOTAL=$((TESTS_TOTAL + 1))
-fi
-
 if docker ps | grep -q "plinko-wallet"; then
     # Wallet container runs nginx, can't use wget. Test from another container.
     echo -n "Testing Wallet accessibility from Docker network ... "

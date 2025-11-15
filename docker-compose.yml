@@ -31,9 +31,7 @@ services:
   eth-mock:
     build: ./services/eth-mock
     container_name: plinko-pir-eth-mock
-    # Expose to host for browser access in public mode
-    ports:
-      - "8545:8545"
+    # Internal only - not exposed to host
     volumes:
       - shared-data:/data
     # Healthcheck disabled - curl not available in container
@@ -45,37 +43,7 @@ services:
     networks:
       - plinko-network
 
-  # Service 2: Database Generator (runs once)
-  # Address: db-generator (Docker internal)
-  # Purpose: Query all accounts from Anvil and create database.bin
-  db-generator:
-    build: ./services/db-generator
-    container_name: plinko-pir-db-generator
-    volumes:
-      - shared-data:/data
-    depends_on:
-      eth-mock:
-        condition: service_started
-    restart: "no"  # Run once only
-    networks:
-      - plinko-network
-
-  # Service 3: Plinko Hint Generator (runs once after db-generator)
-  # Address: plinko-hint-generator (Docker internal)
-  # Purpose: Generate PIR hints from database.bin
-  plinko-hint-generator:
-    build: ./services/plinko-hint-generator
-    container_name: plinko-pir-hint-generator
-    volumes:
-      - shared-data:/data
-    depends_on:
-      db-generator:
-        condition: service_completed_successfully
-    restart: "no"
-    networks:
-      - plinko-network
-
-  # Service 4: Plinko Update Service (always running)
+  # Service 2: Plinko Update Service (always running)
   # External: http://localhost:3001 (health check only)
   # Internal: plinko-pir-updates:3001
   # Purpose: Real-time incremental PIR updates
@@ -86,9 +54,8 @@ services:
       - "3001:3001"
     volumes:
       - shared-data:/data
+      - public-artifacts:/public
     depends_on:
-      plinko-hint-generator:
-        condition: service_completed_successfully
       eth-mock:
         condition: service_started
     healthcheck:
@@ -99,7 +66,30 @@ services:
     networks:
       - plinko-network
 
-  # Service 5: Plinko PIR Server
+  state-syncer:
+    build: ./services/state-syncer
+    container_name: plinko-state-syncer
+    environment:
+      - PLINKO_STATE_RPC_URL=${PLINKO_STATE_RPC_URL:-https://eth.rpc.hypersync.xyz}
+      - PLINKO_STATE_RPC_TOKEN=${PLINKO_STATE_RPC_TOKEN:-}
+      - PLINKO_STATE_START_BLOCK=${PLINKO_STATE_START_BLOCK:-0}
+      - PLINKO_STATE_SIMULATED=${PLINKO_STATE_SIMULATED:-true}
+      - PLINKO_STATE_HTTP_PORT=${PLINKO_STATE_HTTP_PORT:-3002}
+      - PLINKO_STATE_IPFS_API=${PLINKO_STATE_IPFS_API:-http://ipfs:5001}
+      - PLINKO_STATE_IPFS_GATEWAY=${PLINKO_STATE_IPFS_GATEWAY:-http://localhost:8080/ipfs}
+    volumes:
+      - shared-data:/data
+      - public-artifacts:/public
+    ports:
+      - "3002:3002"
+    depends_on:
+      ipfs:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - plinko-network
+
+  # Service 4: Plinko PIR Server
   # External: http://localhost:3000
   # Internal: plinko-pir-server:3000
   # Purpose: Private query server (FullSet/PunctSet PIR)
@@ -110,9 +100,6 @@ services:
       - "3000:3000"
     volumes:
       - shared-data:/data:ro  # Read-only access
-    depends_on:
-      plinko-hint-generator:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s
@@ -121,26 +108,24 @@ services:
     networks:
       - plinko-network
 
-  # Service 6: CDN Mock
+  # Service 5: CDN Mock
   # External: http://localhost:8080
   # Internal: cdn-mock:8080
-  # Purpose: Serve hint.bin and delta files
+  # Purpose: Serve versioned public snapshots + delta feeds
   cdn-mock:
     build: ./services/cdn-mock
     container_name: plinko-pir-cdn
     ports:
       - "8080:8080"
     volumes:
-      - shared-data:/data:ro
+      - public-artifacts:/public:ro
     depends_on:
-      plinko-hint-generator:
-        condition: service_completed_successfully
       plinko-update-service:
         condition: service_healthy
     networks:
       - plinko-network
 
-  # Service 7: Rabby Wallet
+  # Service 6: Rabby Wallet
   # External: http://localhost:5173
   # Internal: rabby-wallet:80
   # Purpose: User-facing wallet with Privacy Mode
@@ -161,6 +146,18 @@ services:
     networks:
       - plinko-network
 
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: plinko-ipfs
+    environment:
+      - IPFS_PROFILE=server
+    volumes:
+      - ipfs-data:/data/ipfs
+    ports:
+      - "5001:5001"  # API (HTTP) for local tooling; gateway left internal
+    networks:
+      - plinko-network
+
 # Define explicit network for better service discovery
 networks:
   plinko-network:
@@ -174,3 +171,10 @@ volumes:
       type: none
       o: bind
       device: ./data
+  public-artifacts:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./public-data
+  ipfs-data:

@@ -397,6 +397,17 @@ body {
   margin-bottom: 0.25rem;
 }
 
+.pir-warning {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 @media (max-width: 768px) {
   .viz-step {
     flex-direction: column;

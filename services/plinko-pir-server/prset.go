@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	"encoding/binary"
 )
 
@@ -9,12 +11,17 @@ type PrfKey128 [16]byte
 
 // PRSet represents a pseudorandom set for Plinko PIR
 type PRSet struct {
-	Key PrfKey128
+	Key   PrfKey128
+	block cipher.Block
 }
 
 // NewPRSet creates a new PRSet with the given key
 func NewPRSet(key PrfKey128) *PRSet {
-	return &PRSet{Key: key}
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		panic(err)
+	}
+	return &PRSet{Key: key, block: block}
 }
 
 // Expand generates a pseudorandom set of database indices
@@ -25,41 +32,25 @@ func (prs *PRSet) Expand(setSize uint64, chunkSize uint64) []uint64 {
 	indices := make([]uint64, setSize)
 
 	for i := uint64(0); i < setSize; i++ {
-		// Generate pseudorandom offset within chunk i
-		// offset ∈ [0, chunkSize)
 		offset := prs.prfEvalMod(i, chunkSize)
-
-		// Database index = chunk_start + offset
 		indices[i] = i*chunkSize + offset
 	}
 
 	return indices
 }
 
-// prfEvalMod evaluates PRF(key, x) mod m
-// Uses simple FNV-1a hash for PoC
+// prfEvalMod evaluates PRF(key, x) mod m using AES-128
 func (prs *PRSet) prfEvalMod(x uint64, m uint64) uint64 {
 	if m == 0 {
 		return 0
 	}
 
-	// FNV-1a hash
-	hash := uint64(2166136261)
+	var input [aes.BlockSize]byte
+	binary.BigEndian.PutUint64(input[aes.BlockSize-8:], x)
 
-	// Mix in key
-	for i := 0; i < 16; i++ {
-		hash ^= uint64(prs.Key[i])
-		hash *= 16777619
-	}
+	var output [aes.BlockSize]byte
+	prs.block.Encrypt(output[:], input[:])
 
-	// Mix in x
-	xBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(xBytes, x)
-	for _, b := range xBytes {
-		hash ^= uint64(b)
-		hash *= 16777619
-	}
-
-	// Return hash mod m
-	return hash % m
+	value := binary.BigEndian.Uint64(output[:8])
+	return value % m
 }

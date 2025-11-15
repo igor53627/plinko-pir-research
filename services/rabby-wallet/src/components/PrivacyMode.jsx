@@ -1,4 +1,5 @@
 import { usePlinkoPIR } from '../providers/PlinkoPIRProvider';
+import { DATASET_STATS, DATASET_DISPLAY } from '../constants/dataset.js';
 import './PrivacyMode.css';
 
 export const PrivacyMode = () => {
@@ -11,6 +12,12 @@ export const PrivacyMode = () => {
     error,
     togglePrivacyMode
   } = usePlinkoPIR();
+
+  const totalSnapshotMB = DATASET_DISPLAY.totalSnapshotMB;
+  const databaseMB = DATASET_DISPLAY.databaseMB;
+  const mappingMB = DATASET_DISPLAY.addressMappingMB;
+  const hintMB = DATASET_DISPLAY.hintMB;
+  const formattedAddressCount = DATASET_STATS.addressCount.toLocaleString();
 
   return (
     <div className="privacy-mode">
@@ -31,8 +38,11 @@ export const PrivacyMode = () => {
         {isLoading && (
           <div className="status-loading">
             <div className="spinner"></div>
-            <p>Downloading Plinko PIR hints...</p>
-            <p className="status-hint">This is a one-time ~70 MB download</p>
+            <p>Downloading Plinko PIR snapshot + address map...</p>
+            <p className="status-hint">
+              This is a one-time ~{totalSnapshotMB} MB download (snapshot database {databaseMB} MB + address-mapping.bin {mappingMB} MB)
+            </p>
+            <p className="status-hint">Check browser console for progress updates</p>
           </div>
         )}
 
@@ -83,14 +93,18 @@ export const PrivacyMode = () => {
       <div className="privacy-info">
         <h4>How Privacy Mode Works:</h4>
         <ul>
-          <li><strong>Initial Hint Download</strong>: One-time ~70 MB download covering 8.4M accounts (2^23 entries)</li>
+          <li>
+            <strong>Initial Data Download</strong>: One-time ~{totalSnapshotMB} MB download
+            (database {databaseMB} MB + address-mapping.bin {mappingMB} MB, hint derived locally ~{hintMB} MB)
+            covering {formattedAddressCount} real Ethereum addresses
+          </li>
           <li><strong>Plinko PIR Queries</strong>: Query balances without revealing which address you're interested in</li>
           <li><strong>Incremental Updates</strong>: Each block update covers ~2,000 accounts (23.75 μs processing time)</li>
           <li><strong>Information-Theoretic Privacy</strong>: Server learns absolutely nothing about your queries</li>
         </ul>
 
         <p className="privacy-performance">
-          <strong>Performance:</strong> ~5ms query latency | ~70 MB one-time download | ~30 KB per block update
+          <strong>Performance:</strong> ~5ms query latency | ~{totalSnapshotMB} MB one-time download | ~30 KB per block update
         </p>
       </div>
     </div>
