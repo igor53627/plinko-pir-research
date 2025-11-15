@@ -1,0 +1,259 @@
+package main
+
+import (
+	"encoding/binary"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"time"
+)
+
+const (
+	DBEntrySize   = 8
+	DBEntryLength = 1
+)
+
+type DBEntry [DBEntryLength]uint64
+
+type PlinkoPIRServer struct {
+	database  []uint64
+	dbSize    uint64
+	chunkSize uint64
+	setSize   uint64
+}
+
+type PlaintextQueryRequest struct {
+	Index uint64 `json:"index"`
+}
+
+type PlaintextQueryResponse struct {
+	Value           uint64 `json:"value"`
+	ServerTimeNanos uint64 `json:"server_time_nanos"`
+}
+
+type FullSetQueryRequest struct {
+	PRFKey []byte `json:"prf_key"`
+}
+
+type FullSetQueryResponse struct {
+	Value           uint64 `json:"value"`
+	ServerTimeNanos uint64 `json:"server_time_nanos"`
+}
+
+type SetParityQueryRequest struct {
+	Indices []uint64 `json:"indices"`
+}
+
+type SetParityQueryResponse struct {
+	Parity          uint64 `json:"parity"`
+	ServerTimeNanos uint64 `json:"server_time_nanos"`
+}
+
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func loadServer(databasePath string) *PlinkoPIRServer {
+	data, err := os.ReadFile(databasePath)
+	if err != nil {
+		log.Fatalf("Failed to read database file %s: %v", databasePath, err)
+	}
+
+	if len(data)%DBEntrySize != 0 {
+		log.Fatalf("Invalid database file: size %d is not a multiple of %d", len(data), DBEntrySize)
+	}
+
+	entryCount := len(data) / DBEntrySize
+	if entryCount == 0 {
+		log.Fatal("Invalid database file: contains zero entries")
+	}
+
+	dbSize := uint64(entryCount)
+	chunkSize, setSize := derivePlinkoParams(dbSize)
+	totalEntries := chunkSize * setSize
+
+	database := make([]uint64, totalEntries)
+	for i := 0; i < entryCount; i++ {
+		database[i] = binary.LittleEndian.Uint64(data[i*DBEntrySize : (i+1)*DBEntrySize])
+	}
+
+	return &PlinkoPIRServer{
+		database:  database,
+		dbSize:    dbSize,
+		chunkSize: chunkSize,
+		setSize:   setSize,
+	}
+}
+
+func (s *PlinkoPIRServer) DBAccess(id uint64) DBEntry {
+	if id < uint64(len(s.database)/DBEntryLength) {
+		startIdx := id * DBEntryLength
+		return DBEntry{s.database[startIdx]}
+	}
+	return DBEntry{0}
+}
+
+func (s *PlinkoPIRServer) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":     "healthy",
+		"service":    "plinko-pir-server",
+		"db_size":    s.dbSize,
+		"chunk_size": s.chunkSize,
+		"set_size":   s.setSize,
+	})
+}
+
+func (s *PlinkoPIRServer) plaintextQueryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req PlaintextQueryRequest
+
+	if r.Method == http.MethodPost {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+	} else {
+		indexStr := r.URL.Query().Get("index")
+		if indexStr == "" {
+			http.Error(w, "Missing index parameter", http.StatusBadRequest)
+			return
+		}
+		index, err := strconv.ParseUint(indexStr, 10, 64)
+		if err != nil {
+			http.Error(w, "Invalid index", http.StatusBadRequest)
+			return
+		}
+		req.Index = index
+	}
+
+	startTime := time.Now()
+	entry := s.DBAccess(req.Index)
+	elapsed := time.Since(startTime)
+
+	resp := PlaintextQueryResponse{
+		Value:           entry[0],
+		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *PlinkoPIRServer) fullSetQueryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req FullSetQueryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.PRFKey) != 16 {
+		http.Error(w, "PRF key must be 16 bytes", http.StatusBadRequest)
+		return
+	}
+
+	log.Println("========================================")
+	log.Println("🔒 PRIVATE QUERY RECEIVED")
+	log.Println("========================================")
+	log.Printf("Server sees: PRF Key (16 bytes): %x\n", req.PRFKey[:8])
+	log.Println("Server CANNOT determine:")
+	log.Println("  ❌ Which address is being queried")
+	log.Println("  ❌ Which balance is being requested")
+	log.Println("  ❌ Any user information")
+	log.Println("Server will compute parity over ~1024 database entries...")
+	log.Println("========================================")
+
+	startTime := time.Now()
+	parity := s.HandleFullSetQuery(req.PRFKey)
+	elapsed := time.Since(startTime)
+
+	log.Printf("✅ FullSet query completed in %v\n", elapsed)
+	log.Printf("Server response: Parity value (uint64): %d\n", parity[0])
+	log.Println("Server remains oblivious to queried address!")
+	log.Println("========================================")
+	log.Println()
+
+	resp := FullSetQueryResponse{
+		Value:           parity[0],
+		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *PlinkoPIRServer) HandleFullSetQuery(prfKeyBytes []byte) DBEntry {
+	var prfKey PrfKey128
+	copy(prfKey[:], prfKeyBytes)
+
+	prSet := NewPRSet(prfKey)
+	expandedSet := prSet.Expand(s.setSize, s.chunkSize)
+
+	var parity DBEntry
+	for _, id := range expandedSet {
+		entry := s.DBAccess(id)
+		parity[0] ^= entry[0]
+	}
+
+	return parity
+}
+
+func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req SetParityQueryRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	startTime := time.Now()
+	parity := s.HandleSetParityQuery(req.Indices)
+	elapsed := time.Since(startTime)
+
+	log.Printf("SetParity query (%d indices) completed in %v\n", len(req.Indices), elapsed)
+
+	resp := SetParityQueryResponse{
+		Parity:          parity[0],
+		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *PlinkoPIRServer) HandleSetParityQuery(indices []uint64) DBEntry {
+	var parity DBEntry
+	for _, index := range indices {
+		entry := s.DBAccess(index)
+		parity[0] ^= entry[0]
+	}
+	return parity
+}

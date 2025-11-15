@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { PlinkoPIRClient } from '../clients/plinko-pir-client.js';
 import { PlinkoClient } from '../clients/plinko-client.js';
+import { DATASET_DISPLAY } from '../constants/dataset.js';
 
 const PlinkoPIRContext = createContext(null);
 
@@ -61,7 +62,7 @@ export const PlinkoPIRProvider = ({ children }) => {
       setError(null);
 
       try {
-        console.log('📥 Downloading Plinko PIR hints...');
+        console.log(`📥 Downloading Plinko PIR snapshot + address mapping (~${DATASET_DISPLAY.totalSnapshotMB} MB total)...`);
         const startTime = performance.now();
 
         await pirClient.downloadHint();
@@ -69,14 +70,14 @@ export const PlinkoPIRProvider = ({ children }) => {
         const elapsed = performance.now() - startTime;
         const size = pirClient.getHintSize();
 
-        console.log(`✅ Hint downloaded: ${(size / 1024 / 1024).toFixed(1)} MB in ${(elapsed / 1000).toFixed(2)}s`);
+        console.log(`✅ Local hint derived: ${(size / 1024 / 1024).toFixed(1)} MB in ${(elapsed / 1000).toFixed(2)}s`);
 
         setHintDownloaded(true);
         setHintSize(size);
         setPrivacyMode(true);
         localStorage.setItem('privacyMode', 'true');
       } catch (err) {
-        console.error('❌ Failed to download hint:', err);
+        console.error('❌ Failed to download snapshot:', err);
         setError(err.message);
         setPrivacyMode(false);
       } finally {
@@ -140,7 +141,24 @@ export const PlinkoPIRProvider = ({ children }) => {
       const elapsed = performance.now() - startTime;
       console.log(`✅ Private query completed in ${elapsed.toFixed(1)}ms`);
 
-      return result; // { balance, visualization }
+      if (result?.saturated) {
+        console.warn('⚠️ Balance exceeds 64-bit dataset; fetching precise value from fallback RPC');
+        const fallbackBalance = await fetchBalancePublic(address);
+        return {
+          balance: fallbackBalance,
+          visualization: result.visualization
+            ? {
+                ...result.visualization,
+                saturated: true,
+                fallbackBalanceWei: fallbackBalance.toString()
+              }
+            : null,
+          saturated: true,
+          fallbackSource: 'rpc'
+        };
+      }
+
+      return result; // { balance, visualization, saturated }
     } catch (err) {
       console.error('⚠️ Private query failed, falling back to public RPC:', err);
       const balance = await fetchBalancePublic(address);

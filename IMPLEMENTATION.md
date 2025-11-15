@@ -73,7 +73,13 @@ This PoC consists of 7 services orchestrated with Docker Compose:
 | **Plinko PIR Server** | `http://localhost:3000` | Private query endpoint |
 | **CDN Mock** | `http://localhost:8080` | Hint and delta files |
 | **Plinko Update Service** | `http://localhost:3001` | Health check endpoint |
+| **State Syncer** | `http://localhost:3002` | Hypersync ingestion + artifact publisher (pins snapshots to IPFS when configured) |
 | **Anvil** | Not exposed | Docker internal only |
+| **IPFS Daemon** | API: `http://localhost:5001` | Local Kubo node used for pinning snapshots |
+
+> Only one writer (`plinko-update-service` for simulated flow or `state-syncer` for Hypersync) should run against the shared `/data` volume at a time.
+
+The CDN mock also exposes `/ipfs/<cid>` by proxying to the bundled `ipfs/kubo` gateway so browsers can fetch snapshot chunks referenced in `manifest.json` even without a native IPFS transport; production deployments should reproduce this routing (e.g., `cdn.example.com/ipfs/<cid>`).
 
 See [docs/SERVICE_ADDRESSING.md](docs/SERVICE_ADDRESSING.md) for detailed networking configuration, including custom domain setup.
 
@@ -107,17 +113,11 @@ Background Services:
           │
           ▼
 ┌────────────────────┐
-│ Database Generator │  (Go, one-time)
-│ Queries all        │  - database.bin (64 MB)
-│ accounts from      │  - address-mapping.bin (192 MB)
-│ Anvil              │  - Deterministic sorting
-└─────────┬──────────┘
-          │
-          ▼
-┌────────────────────┐
-│ Piano Hint         │  (Go, one-time)
-│ Generator          │  - Generates hint.bin (~70 MB)
-│ Creates PIR hints  │  - From database.bin
+│ Snapshot Builder   │  (Python, on-demand)
+│ Reads parquet      │  - balance_diffs_blocks-*.parquet
+│ diffs + aggregates │  - database.bin / address-mapping.bin
+│ via scripts/build_ │  - canonical state for 5.5M wallets
+│ database_from_...  │
 └─────────┬──────────┘
           │
           ▼
@@ -343,39 +343,20 @@ make reset
 make start
 ```
 
-### Database generation stuck
+### Snapshot builder stuck
 
-**Problem**: Database generator hangs or takes too long
-
-**Solutions**:
-```bash
-# Check Anvil is responding
-curl -X POST -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-  http://localhost:8545
-
-# Check database generator logs
-docker logs piano-pir-db-generator
-
-# Increase timeout or reduce concurrency in service code
-```
-
-### Hint generation fails
-
-**Problem**: Piano hint generator fails or produces wrong size
+**Problem**: `scripts/build_database_from_parquet.py` hangs or never finishes.
 
 **Solutions**:
 ```bash
-# Verify database.bin exists and has correct size
-ls -lh shared/data/database.bin
-# Expected: 67,108,864 bytes exactly
+# Ensure raw parquet diffs exist
+ls raw_balances | head
 
-# Check hint generator logs
-docker logs piano-pir-hint-generator
+# Re-run with verbose logging
+python3 scripts/build_database_from_parquet.py --input raw_balances --output data
 
-# Remove corrupted files and restart
-rm shared/data/hint.bin
-docker-compose up piano-pir-hint-generator
+# Verify resulting artifacts
+ls -lh data/database.bin data/address-mapping.bin
 ```
 
 ### No deltas being generated

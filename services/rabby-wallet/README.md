@@ -69,7 +69,7 @@ npm run build
 
 ### Enabling Privacy Mode
 1. User clicks "Privacy Mode" toggle
-2. Wallet downloads hint.bin (~70 MB, ~1-2 seconds)
+2. Wallet downloads the public snapshot package (~70 MB) + address mapping (201 MB) and derives the hint locally
 3. Privacy Mode enabled
 4. All future queries are private
 
@@ -241,7 +241,7 @@ Tested on:
 
 **Problem**: "Failed to download hint"
 - Check CDN service is running (`docker-compose ps`)
-- Verify hint.bin exists (`ls shared/data/hint.bin`)
+- Verify canonical database exists (`ls shared/data/database.bin`)
 - Check browser console for CORS errors
 
 **Problem**: "Private query failed"

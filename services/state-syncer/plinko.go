@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+const (
+	DBEntrySize   = 8
+	DBEntryLength = 1
+)
+
+type DBEntry [DBEntryLength]uint64
+
 // Plinko: Incremental Update System for Plinko PIR
 // Based on ePrint 2024/318: "Single-Server PIR via Homomorphic Thorp Shuffles"
 // Enables O(1) worst-case update time per database entry

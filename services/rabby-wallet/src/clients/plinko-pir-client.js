@@ -7,6 +7,15 @@
  * - Balance extraction from PIR responses
  */
 
+import { sha256 } from '@noble/hashes/sha256';
+import { Aes128 } from '../crypto/aes128.js';
+import { DATASET_STATS } from '../constants/dataset.js';
+
+const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
+  ? globalThis.crypto
+  : null;
+const UINT64_MAX = (1n << 64n) - 1n;
+
 export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
     this.pirServerUrl = pirServerUrl;
@@ -14,75 +23,254 @@ export class PlinkoPIRClient {
     this.hint = null;
     this.addressMapping = null; // Map from address hex -> index
     this.metadata = null;
+     this.snapshotVersion = null;
+     this.snapshotManifest = null;
+    this._prfScratch = null;
   }
 
   /**
-   * Download hint.bin from CDN
-   * This is a one-time download (~70 MB)
+   * Download `snapshots/latest/manifest.json` + database.bin from CDN
+   * Derive hint locally from the canonical snapshot (43 MB)
+   * Total download: ~170 MB (snapshot database ~42.6 MB + address-mapping.bin ~127.6 MB)
    */
   async downloadHint() {
-    console.log(`Downloading hint from ${this.cdnUrl}/hint.bin...`);
+    console.log(`📥 Fetching snapshot manifest...`);
+    const manifest = await this.fetchSnapshotManifest();
+    this.snapshotManifest = manifest;
+    this.snapshotVersion = manifest.version;
 
-    const response = await fetch(`${this.cdnUrl}/hint.bin`);
-    if (!response.ok) {
-      throw new Error(`Failed to download hint: ${response.status}`);
-    }
-
-    const hintData = await response.arrayBuffer();
-    this.hint = new Uint8Array(hintData);
-
-    // Parse metadata header (first 32 bytes)
-    const view = new DataView(hintData);
     this.metadata = {
-      dbSize: Number(view.getBigUint64(0, true)),
-      chunkSize: Number(view.getBigUint64(8, true)),
-      setSize: Number(view.getBigUint64(16, true))
+      dbSize: Number(manifest.db_size),
+      chunkSize: Number(manifest.chunk_size),
+      setSize: Number(manifest.set_size)
     };
 
-    console.log(`Hint downloaded:`, this.metadata);
+    console.log(`📦 Snapshot version ${this.snapshotVersion} (db_size=${this.metadata.dbSize.toLocaleString()}, chunk=${this.metadata.chunkSize}, set=${this.metadata.setSize})`);
+
+    const databaseFile = this.findDatabaseFile(manifest);
+    if (!databaseFile) {
+      throw new Error('Snapshot manifest missing database.bin entry');
+    }
+
+    const snapshotUrls = this.buildSnapshotUrls(databaseFile);
+    const snapshotBytes = await this.downloadFromCandidates(
+      snapshotUrls,
+      `snapshot database (${(databaseFile.size / 1024 / 1024).toFixed(1)} MB)`,
+      databaseFile.size
+    );
+
+    await this.verifySnapshotHash(snapshotBytes, databaseFile.sha256 || databaseFile.SHA256);
+
+    console.log(`🔐 Deriving local hint from snapshot...`);
+    this.hint = this.buildHintFromSnapshot(snapshotBytes, this.metadata);
+    const finalSize = (this.hint.byteLength / 1024 / 1024).toFixed(1);
+    console.log(`✅ Local hint generated (${finalSize} MB)`);
+    console.log(`📊 Hint metadata:`, this.metadata);
 
     // Download address-mapping.bin
     await this.downloadAddressMapping();
   }
 
-  /**
-   * Download address-mapping.bin from CDN
-   * This maps Ethereum addresses to database indices
-   */
-  async downloadAddressMapping() {
-    console.log(`Downloading address mapping from ${this.cdnUrl}/address-mapping.bin...`);
-
-    const response = await fetch(`${this.cdnUrl}/address-mapping.bin`);
+  async fetchSnapshotManifest() {
+    const url = `${this.cdnUrl}/snapshots/latest/manifest.json?t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) {
-      throw new Error(`Failed to download address-mapping.bin: ${response.status}`);
+      throw new Error(`Failed to download snapshot manifest: ${response.status}`);
+    }
+    const manifest = await response.json();
+    return manifest;
+  }
+
+  findDatabaseFile(manifest) {
+    if (!manifest || !manifest.files) return null;
+    return manifest.files.find(file => file.path.endsWith('database.bin')) || null;
+  }
+
+  buildSnapshotUrls(fileEntry) {
+    const candidates = [];
+    if (fileEntry?.ipfs?.gateway_url) {
+      candidates.push(fileEntry.ipfs.gateway_url);
+    }
+    if (fileEntry?.ipfs?.cid) {
+      candidates.push(`${this.cdnUrl}/ipfs/${fileEntry.ipfs.cid}`);
+    }
+    const snapshotPath = `snapshots/${this.snapshotVersion}/${fileEntry.path}`;
+    candidates.push(`${this.cdnUrl}/${snapshotPath}`);
+    return [...new Set(candidates.filter(Boolean))];
+  }
+
+  buildHintFromSnapshot(snapshotBytes, metadata) {
+    const totalLength = 32 + snapshotBytes.length;
+    const hintBuffer = new Uint8Array(totalLength);
+    const view = new DataView(hintBuffer.buffer, hintBuffer.byteOffset, 32);
+    view.setBigUint64(0, BigInt(metadata.dbSize), true);
+    view.setBigUint64(8, BigInt(metadata.chunkSize), true);
+    view.setBigUint64(16, BigInt(metadata.setSize), true);
+    view.setBigUint64(24, 0n, true);
+    hintBuffer.set(snapshotBytes, 32);
+    return hintBuffer;
+  }
+
+  async verifySnapshotHash(bytes, expectedHex) {
+    if (!expectedHex) {
+      return;
+    }
+    let hashBytes;
+    const subtle = browserCrypto?.subtle;
+    if (subtle && typeof subtle.digest === 'function') {
+      const hashBuffer = await subtle.digest('SHA-256', bytes);
+      hashBytes = new Uint8Array(hashBuffer);
+    } else {
+      console.warn('⚠️ WebCrypto subtle API unavailable; falling back to @noble/hashes for snapshot verification');
+      hashBytes = sha256(bytes);
+    }
+    const actualHex = this.bufferToHex(hashBytes);
+    if (actualHex.toLowerCase() !== expectedHex.toLowerCase()) {
+      throw new Error(`Snapshot hash mismatch. Expected ${expectedHex}, got ${actualHex}`);
+    }
+    console.log(`✅ Snapshot hash verified (${expectedHex.slice(0, 8)}...)`);
+  }
+
+  bufferToHex(bytes) {
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  async downloadFromCandidates(urls, label, fallbackSize) {
+    let lastError = null;
+    for (const url of urls) {
+      try {
+        return await this.downloadBinary(url, label, fallbackSize);
+      } catch (err) {
+        console.warn(`⚠️  Download failed for ${url}: ${err.message}`);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error(`Failed to download ${label}`);
+  }
+
+  async downloadBinary(url, label, fallbackSize) {
+    console.log(`📥 Downloading ${label} from ${url}...`);
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to download ${label}: ${response.status}`);
     }
 
-    const mappingData = await response.arrayBuffer();
+    const contentLength = response.headers.get('content-length');
+    const total = contentLength ? parseInt(contentLength, 10) : fallbackSize || 0;
+
+    const reader = response.body.getReader();
+    let receivedLength = 0;
+    const chunks = [];
+
+    let lastLogTime = Date.now();
+    const startTime = Date.now();
+
+    while(true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+
+      chunks.push(value);
+      receivedLength += value.length;
+
+      if (total > 0) {
+        const now = Date.now();
+        if (now - lastLogTime > 500) {
+          const percent = ((receivedLength / total) * 100).toFixed(1);
+          const receivedMB = (receivedLength / 1024 / 1024).toFixed(1);
+          const totalMB = (total / 1024 / 1024).toFixed(1);
+          const elapsed = (now - startTime) / 1000;
+          const speed = (receivedLength / 1024 / 1024 / elapsed).toFixed(1);
+          console.log(`📶 ${label}: ${percent}% (${receivedMB}/${totalMB} MB) - ${speed} MB/s`);
+          lastLogTime = now;
+        }
+      }
+    }
+
+    const chunksAll = new Uint8Array(receivedLength);
+    let position = 0;
+    for (const chunk of chunks) {
+      chunksAll.set(chunk, position);
+      position += chunk.length;
+    }
+    const finalSize = (receivedLength / 1024 / 1024).toFixed(1);
+    console.log(`✅ Downloaded ${label} (${finalSize} MB)`);
+    return chunksAll;
+  }
+
+  /**
+   * Download address-mapping.bin from CDN
+   * This maps Ethereum addresses to database indices (~127.6 MB)
+   *
+   * Cache-busting strategy:
+   * - Uses timestamp parameter and no-store to bypass browser cache
+   * - Prevents serving stale Anvil test data
+   * - Forces fresh download of real Ethereum address mapping
+   */
+  async downloadAddressMapping() {
+    // Add cache-busting timestamp to force fresh download
+    // This ensures we get the NEW file, not cached old Anvil data
+    const timestamp = Date.now();
+    const url = `${this.cdnUrl}/address-mapping.bin?v=${timestamp}`;
+    const mappingEntries = this.metadata?.dbSize || DATASET_STATS.addressCount;
+    const mappingBytes = mappingEntries * 24;
+    const mappingMB = Number((mappingBytes / 1024 / 1024).toFixed(1));
+    const mappingLabel = `address-mapping.bin (~${mappingMB} MB)`;
+    console.log(`📥 Downloading ${mappingLabel}...`);
+    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes);
+
+    const mappingData = chunksAll.buffer;
     const view = new DataView(mappingData);
-    
+
     // Parse address-mapping.bin
     // Format: [20 bytes address][4 bytes index (little-endian)] repeated
     this.addressMapping = new Map();
-    
+
     const entrySize = 24; // 20 bytes address + 4 bytes index
     const numEntries = mappingData.byteLength / entrySize;
-    
+
+    console.log(`📊 Parsing ${numEntries.toLocaleString()} address entries...`);
+
     for (let i = 0; i < numEntries; i++) {
       const offset = i * entrySize;
-      
+
       // Read 20-byte address
       const addressBytes = new Uint8Array(mappingData, offset, 20);
       const addressHex = '0x' + Array.from(addressBytes)
         .map(b => b.toString(16).padStart(2, '0'))
         .join('');
-      
+
       // Read 4-byte index (little-endian)
       const index = view.getUint32(offset + 20, true);
-      
+
       this.addressMapping.set(addressHex.toLowerCase(), index);
     }
-    
-    console.log(`Address mapping loaded: ${this.addressMapping.size} entries`);
+
+    const finalSize = (chunksAll.byteLength / 1024 / 1024).toFixed(1);
+    console.log(`✅ Address mapping loaded (${finalSize} MB, ${this.addressMapping.size.toLocaleString()} addresses)`);
+
+    // Log address range for debugging and cache verification
+    if (this.addressMapping.size > 0) {
+      const addresses = Array.from(this.addressMapping.keys()).sort();
+      const firstAddr = addresses[0];
+      const lastAddr = addresses[addresses.length - 1];
+      console.log(`📍 Address range: ${firstAddr} to ${lastAddr}`);
+      const expectedCount = (this.metadata?.dbSize || DATASET_STATS.addressCount).toLocaleString();
+      console.log(`ℹ️  Expected dataset size: ${expectedCount} Ethereum addresses from the initial 99k mainnet blocks`);
+
+      // Detect stale Anvil cache
+      if (firstAddr.startsWith('0x1000')) {
+        console.error(`❌ STALE CACHE DETECTED! Got Anvil test data (0x1000...) instead of real Ethereum data (0x0000...)`);
+        console.error(`⚠️  Please hard-refresh (Ctrl+Shift+R or Cmd+Shift+R) to clear browser cache`);
+      }
+    }
   }
 
   /**
@@ -176,14 +364,35 @@ export class PlinkoPIRClient {
    */
   addressToIndex(address) {
     const normalizedAddress = address.toLowerCase();
-    
+
     // Look up address in mapping
     if (this.addressMapping && this.addressMapping.has(normalizedAddress)) {
       return this.addressMapping.get(normalizedAddress);
     }
-    
-    // Address not found in database
-    throw new Error(`Address ${address} not found in database. Only addresses in range 0x1000...0000 to 0x1000...${(this.metadata?.dbSize - 1 || 0).toString(16)} are indexed.`);
+
+    // Address not found in database - show real address range
+    let errorMessage = `Address ${address} not found in database. `;
+
+    if (this.addressMapping && this.addressMapping.size > 0) {
+      const addresses = Array.from(this.addressMapping.keys()).sort();
+      const firstAddr = addresses[0];
+      const lastAddr = addresses[addresses.length - 1];
+
+      // Show actual address range from mapping
+      errorMessage += `Database contains ${this.addressMapping.size.toLocaleString()} real Ethereum addresses ` +
+        `(range: ${firstAddr.substring(0, 6)}...${firstAddr.slice(-4)} to ${lastAddr.substring(0, 6)}...${lastAddr.slice(-4)}). `;
+
+      // Detect stale cache
+      if (firstAddr.startsWith('0x1000')) {
+        errorMessage += `⚠️ WARNING: Detected Anvil test data (0x1000...) - you may have stale cache. `;
+      }
+    } else {
+      errorMessage += `Address mapping not loaded. `;
+    }
+
+    errorMessage += `Try hard-refreshing (Ctrl+Shift+R or Cmd+Shift+R) if you see unexpected address ranges.`;
+
+    throw new Error(errorMessage);
   }
 
   /**
@@ -208,7 +417,11 @@ export class PlinkoPIRClient {
     const { chunkSize, setSize } = this.metadata;
 
     // Generate random PRF key (16 bytes)
-    const prfKey = crypto.getRandomValues(new Uint8Array(16));
+    const cryptoSource = browserCrypto;
+    if (!cryptoSource?.getRandomValues) {
+      throw new Error('Secure random generator unavailable in this environment');
+    }
+    const prfKey = cryptoSource.getRandomValues(new Uint8Array(16));
 
     // Prepare request
     const url = `${this.pirServerUrl}/query/fullset`;
@@ -280,6 +493,11 @@ export class PlinkoPIRClient {
     // For this PoC: hint should match database exactly, so balance = hintValue
     // In production with updates: would need to apply delta if hint is stale
     const targetBalance = hintValue;
+    const saturated = targetBalance === UINT64_MAX;
+
+    if (saturated) {
+      console.warn('⚠️ Balance hit uint64 cap in dataset; account exceeds 64-bit range');
+    }
 
     console.log(`✅ Decoded balance: ${targetBalance} wei`);
     console.log(`   Server parity: ${serverParity}, Hint parity: ${hintParity}, Delta: ${delta}`);
@@ -301,58 +519,53 @@ export class PlinkoPIRClient {
         hintParity: hintParity.toString(),
         delta: delta.toString(),
         hintValue: hintValue.toString(),
+        dbSize: this.metadata?.dbSize || chunkSize * setSize,
         chunkSize,
-        setSize
-      }
+        setSize,
+        saturated
+      },
+      saturated
     };
   }
 
   /**
-   * Expand PRF key to pseudorandom set (matches server-side prset.go)
+   * Expand PRF key to pseudorandom set (matches server AES-128 PRF)
    * @param {Uint8Array} prfKey - 16-byte PRF key
    * @param {number} setSize - Number of chunks (k in Plinko PIR)
    * @param {number} chunkSize - Size of each chunk
    * @returns {number[]} - Array of database indices
    */
   expandPRFSet(prfKey, setSize, chunkSize) {
+    const keyBytes = prfKey instanceof Uint8Array ? prfKey : Uint8Array.from(prfKey);
+    const aes = new Aes128(keyBytes);
+    const scratch = this.getPrfScratch();
     const indices = [];
     for (let i = 0; i < setSize; i++) {
-      const offset = this.prfEvalMod(prfKey, i, chunkSize);
-      const index = i * chunkSize + offset;
-      indices.push(index);
+      const offset = this.prfEvalMod(aes, i, chunkSize, scratch);
+      indices.push(i * chunkSize + offset);
     }
     return indices;
   }
 
   /**
-   * PRF evaluation: PRF(key, x) mod m (matches server-side FNV-1a)
-   * @param {Uint8Array} key - 16-byte PRF key
+   * PRF evaluation: AES-128(key, x) mod m (matches server implementation)
+   * @param {Aes128} aes - AES instance initialised with the PRF key
    * @param {number} x - Input value
    * @param {number} m - Modulus
+   * @param {object} [scratch] - Reusable buffers for AES evaluation
    * @returns {number} - PRF output mod m
    */
-  prfEvalMod(key, x, m) {
+  prfEvalMod(aes, x, m, scratch = this.getPrfScratch()) {
     if (m === 0) return 0;
 
-    // FNV-1a hash (matching Go implementation)
-    let hash = 2166136261;
+    const { block, encrypted, blockView, encryptedView } = scratch;
+    block.fill(0);
+    blockView.setBigUint64(8, BigInt(x), false);
 
-    // Mix in key
-    for (let i = 0; i < 16; i++) {
-      hash ^= key[i];
-      hash = Math.imul(hash, 16777619);
-    }
+    aes.encryptBlock(block, encrypted);
 
-    // Mix in x (little-endian uint64)
-    const xBytes = new Uint8Array(8);
-    new DataView(xBytes.buffer).setBigUint64(0, BigInt(x), true);
-    for (const b of xBytes) {
-      hash ^= b;
-      hash = Math.imul(hash, 16777619);
-    }
-
-    // Return hash mod m (convert to unsigned)
-    return (hash >>> 0) % m;
+    const value = encryptedView.getBigUint64(0, false);
+    return Number(value % BigInt(m));
   }
 
   /**
@@ -369,5 +582,19 @@ export class PlinkoPIRClient {
     }
     const view = new DataView(hintData.buffer, hintData.byteOffset);
     return view.getBigUint64(offset, true); // Little-endian
+  }
+
+  getPrfScratch() {
+    if (!this._prfScratch) {
+      const block = new Uint8Array(16);
+      const encrypted = new Uint8Array(16);
+      this._prfScratch = {
+        block,
+        encrypted,
+        blockView: new DataView(block.buffer),
+        encryptedView: new DataView(encrypted.buffer)
+      };
+    }
+    return this._prfScratch;
   }
 }

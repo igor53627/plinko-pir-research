@@ -12,8 +12,8 @@ A complete **Plinko PIR implementation** for Ethereum that enables:
 
 - **🔐 Private Balance Queries**: Check wallet balances without revealing addresses to servers
 - **⚡ Real-Time Updates**: O(1) incremental updates synchronized with 12-second Ethereum blocks
-- **📈 Ethereum Scale**: Handles 8.4M accounts (Ethereum "Warm Tier")
-- **🌐 Production Ready**: Kubernetes deployment with Helm charts for Vultr/AWS/GCP
+- **📈 Ethereum Scale**: Handles 5.6M real addresses (latest 100K mainnet blocks)
+- **🌐 Reference Stack**: Reproducible Docker Compose environment with CDN mock + wallet
 
 **What is Plinko PIR?**
 Plinko PIR is a breakthrough Private Information Retrieval protocol from the [EUROCRYPT 2025 paper](https://eprint.iacr.org/2024/318) that uses XOR-based incremental updates to achieve **O(1) update complexity** - a 79× speedup over traditional PIR schemes. This makes it the first PIR system capable of real-time blockchain synchronization.
@@ -43,40 +43,13 @@ open http://localhost:5173
 - Live Plinko PIR decoding visualization
 - Real-time delta updates every 12 seconds
 
-### Option 2: Kubernetes (Production-like - 15 minutes)
-
-#### Local Development (Kind)
-```bash
-cd deploy/helm/plinko-pir
-
-# Deploy to local Kind cluster
-./scripts/deploy-local.sh
-
-# Access wallet
-open http://localhost:30173
-```
-
-#### Production Deployment (Vultr VKE)
-```bash
-# Deploy to Vultr Kubernetes Engine
-./deploy/helm/plinko-pir/scripts/deploy-vke.sh \
-  --kubeconfig ~/path/to/vke-kubeconfig.yaml \
-  --namespace plinko-pir
-
-# Access via LoadBalancer IPs (shown after deployment)
-```
-
-See [VULTR_DEPLOYMENT.md](deploy/VULTR_DEPLOYMENT.md) for production deployment guide and [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup.
-
----
-
 ## 📊 Research Summary
 
 ### Key Findings
 
 | Research Area | Finding | Status |
 |---------------|---------|--------|
-| **eth_getBalance** | ✅ **VIABLE** - 8.4M accounts, 5ms queries | PoC Implemented |
+| **eth_getBalance** | ✅ **VIABLE** - 5.6M recent addresses, ~5 ms queries | PoC Implemented |
 | **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase-4-eth-call-analysis.md) |
 | **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
 | **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
@@ -109,23 +82,20 @@ This makes Plinko the **first PIR system viable for live blockchain data**.
 
 ```mermaid
 graph TB
-    A[Ethereum Node<br/>Anvil/Geth] -->|Monitor Blocks| B[Plinko Update Service]
-    B -->|Generate Deltas| C[Delta Storage<br/>XOR Updates]
+    A[Ethereum Node<br/>Anvil/Geth] -->|Monitor Blocks| S[State Syncer]
+    S -->|Apply Updates| C[Canonical DB<br/>database.bin]
 
-    C -->|Serve Deltas| D[CDN<br/>CloudFlare R2]
+    E[Snapshot Builder<br/>Parquet ETL] -->|Seed Snapshot| C
+    C -->|Serve Queries| H[Plinko PIR Server]
 
-    E[Database Generator] -->|Initial DB| F[PIR Database<br/>8.4M accounts]
-    F -->|Compress| G[Hint Generator]
-    G -->|Client Download| D
+    S -->|Publish Deltas + Snapshot Manifest| D[CDN<br/>CloudFlare R2]
+    C -->|Versioned Snapshots (public)| D
 
-    H[Plinko PIR Server] -->|Query| F
-    H -->|Fetch Hints| D
+    I[User Wallet<br/>Rabby Fork] -->|Fetch Snapshot + Deltas| D
+    I -->|Generate Hint Locally| I
+    I -->|Private Query| H
 
-    I[User Wallet<br/>Rabby Fork] -->|Download Hint| D
-    I -->|PIR Query| H
-    I -->|Fetch Delta| D
-
-    style F fill:#90EE90
+    style C fill:#90EE90
     style H fill:#87CEEB
     style I fill:#FFD700
 ```
@@ -135,12 +105,24 @@ graph TB
 | Service | Purpose | Technology |
 |---------|---------|------------|
 | **eth-mock** | Simulated Ethereum node | Anvil (Foundry) |
-| **db-generator** | Creates initial PIR database | Go + ethclient |
-| **hint-generator** | Compresses database for clients | Plinko algorithm |
 | **plinko-update-service** | Monitors blocks, generates deltas | Go + WebSocket |
+| **state-syncer** | Streams Hypersync blocks → snapshots/deltas | Go + Hypersync RPC |
 | **plinko-pir-server** | Handles PIR queries | Plinko protocol |
-| **cdn** | Distributes hints and deltas | Nginx / CloudFlare R2 |
+| **cdn** | Distributes snapshot packages/deltas + proxies IPFS | Nginx / CloudFlare R2 |
 | **rabby-wallet** | Privacy-enhanced wallet UI | React + Vite |
+| **ipfs** | Local Kubo daemon (pin snapshots) | ipfs/kubo |
+
+> Run either `plinko-update-service` (simulated blocks) **or** `state-syncer` (Hypersync) against the shared `/data` volume at a time.
+
+### Snapshot Distribution
+
+- A bundled **ipfs/kubo** daemon runs on the compose network (service `ipfs`). The state-syncer talks to its HTTP API at `ipfs:5001` by default and pins every snapshot artifact, storing the resulting `ipfs.cid` metadata inside `manifest.json`.
+- The CDN mock exposes `http://localhost:8080/ipfs/<cid>` which proxies directly to the local IPFS gateway (via Docker networking) while preserving CORS headers, so wallet clients can fetch snapshot chunks via HTTP even if they can't speak native `ipfs://`.
+- Clients download `manifest.json`, verify the SHA-256 hash, then optionally fetch `database.bin` through the CDN/IPFS bridge before deriving hints locally.
+- Wallet TODOs: surface hash mismatch errors in the UI, cache successful IPFS URLs for subsequent loads, and add a smoke test (e.g., extend `scripts/test-privacy.sh`) that curls the `/ipfs/<cid>` route to catch regressions.
+- Deployment reminder: when shipping outside docker-compose, mirror this layout by exposing an `/ipfs/` path (behind your CDN/ingress) that forwards to your IPFS gateway so browsers only ever talk to a single origin.
+
+Managed pinning recommendation: **web3.storage** offers generous free quotas, an ergonomic HTTP API, and automatic IPFS pinning backed by Filecoin; to switch, point `PLINKO_STATE_IPFS_API` at their upload endpoint (with your API token) and keep `PLINKO_STATE_IPFS_GATEWAY` targeting the CDN proxy so browser behavior remains unchanged. Alternatives: **Pinata** (mature dashboard + region pinning), **Infura IPFS** (tight integration with Consensys infra), and **Estuary** (open source, Filecoin-centric). Any of these work by updating the syncer env vars and letting the CDN continue to serve `/ipfs/<cid>` via your preferred gateway domain.
 
 ---
 
@@ -152,11 +134,11 @@ graph TB
 
 ```
 Configuration:
-  - Database: 8.4M accounts (2^23) = Ethereum Warm Tier
+  - Database: 5,575,868 addresses (balances from the last 100K Ethereum blocks)
   - Entry size: 8 bytes (uint64 balance)
-  - Hint size: 70 MB (one-time download)
+  - Snapshot artifacts: ~43 MB (database.bin) + ~128 MB (address-mapping.bin)
   - Query latency: ~5ms
-  - Update latency: 23.75ms per 2,000 accounts
+  - Update latency: 23.75ms per 2,000 accounts (Plinko cache mode)
 ```
 
 **Use Cases:**
@@ -206,18 +188,13 @@ See [Phase 4 Analysis](research/findings/phase-4-eth-call-analysis.md)
 
 ```
 plinko-pir-research/
-├── services/              # 7 microservices
+├── services/              # 6 microservices
 │   ├── db-generator/      # Initial database creation
 │   ├── plinko-update-service/  # Real-time delta generation
 │   ├── plinko-pir-server/      # PIR query handler
-│   ├── plinko-hint-generator/  # Client hint compression
-│   ├── plinko-cdn/             # Delta & hint distribution
+│   ├── cdn-mock/               # Snapshot + delta CDN mock
 │   ├── rabby-wallet/           # Privacy-enhanced wallet UI
 │   └── eth-mock/               # Test Ethereum node
-├── deploy/                # Kubernetes Helm charts
-│   ├── helm/plinko-pir/   # Production deployment
-│   ├── LOCAL_TESTING.md   # Kind/Minikube guide
-│   └── DEPLOYMENT.md      # Vultr/AWS/GCP guide
 ├── research/              # Complete research archive
 │   ├── findings/          # Phase-by-phase analysis
 │   │   ├── phase-4-eth-call-analysis.md
@@ -225,7 +202,8 @@ plinko-pir-research/
 │   │   ├── eth-logs-50k-blocks.md
 │   │   └── fixed-size-log-compression.md
 │   └── _summary.md        # Executive summary
-├── data/                  # PIR database files (Git LFS)
+├── data/                  # Canonical PIR database files (Git LFS)
+├── public-data/           # Public snapshot/delta artifacts (served via CDN mock)
 ├── docker-compose.yml     # Local development
 └── IMPLEMENTATION.md      # Technical deep-dive
 ```
@@ -234,39 +212,49 @@ plinko-pir-research/
 
 ## 🚢 Deployment
 
-### Development (Docker Compose)
+Plinko PIR now ships solely as a Docker Compose reference stack. Kubernetes manifests/Helm charts have been removed to keep the repo focused on the privacy-critical Compose flow.
 
 ```bash
-make build && make start
+make build && make start    # builds services + starts docker compose
+make logs                   # tail logs per service
+make clean                  # tear down containers + volumes
 ```
 
-**Best for**: Local development, testing, demos
-**Resources**: 4 GB RAM, 2 CPU cores
-**Setup time**: 5 minutes
+**Best for**: Local development, reproducible demos, CI smoke tests  
+**Resources**: 4 GB RAM, 2 CPU cores  
+**Notes**: Use the new `public-data/` directory for CDN artifacts; keep `data/` private to the server/update services.
 
-### Local Kubernetes (Kind/Minikube)
+### Remote (Vultr) Deployment
+
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the fully scripted workflow powered by `scripts/vultr-deploy.sh`. It:
+- Discovers the target VM via `VULTR_TAG`
+- Bootstraps Docker/rsync (`bootstrap`)
+- Rsyncs the repo (`sync`)
+- Runs `docker compose up -d --build` remotely (`up`)
+- Streams remote logs (`logs`)
+
+Set `VULTR_API_KEY`, `SSH_KEY`, and optional overrides (`VULTR_REMOTE_DIR`, `VULTR_SSH_USER`) in your local `.env` (ignored by git) before running the script.
+
+### Preparing Canonical Database from Real Balances
+
+Production datasets arrive as Parquet diffs (see `raw_balances/`). Convert them into `database.bin` + `address-mapping.bin` before starting the stack:
 
 ```bash
-cd deploy/helm/plinko-pir
-./scripts/deploy-local.sh
+# 1. Copy raw diffs from reth-onion-dev
+rsync -avz reth-onion-dev:~/plinko-balances/balance_diffs_blocks-*.parquet raw_balances/
+
+# 2. Build the artifacts (writes into ./data/)
+python3 scripts/build_database_from_parquet.py --input raw_balances --output data
 ```
 
-**Best for**: Pre-production testing, CI/CD
-**Resources**: 8 GB RAM, 4 CPU cores
-**Setup time**: 15 minutes
-**Guide**: [deploy/LOCAL_TESTING.md](deploy/LOCAL_TESTING.md)
+`docker compose` now reads those files directly; the legacy `db-generator` service has been removed.
 
-### Production Kubernetes (Vultr/AWS/GCP)
+---
 
-```bash
-cd deploy/helm/plinko-pir
-./scripts/deploy.sh --production
-```
+## 🧪 Performance Benchmarking
 
-**Best for**: Public deployment, high availability
-**Resources**: 3-node cluster (4 GB RAM/node)
-**Setup time**: 20 minutes
-**Guide**: [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md)
+- `scripts/bench-updates.sh` runs the new lightweight benchmark harness against `test-data/updates/sample_block.json` (configure iterations via `BENCH_ITER`).  
+- `plinko-update-service` now exposes `GET /metrics` (JSON) alongside `/health`, reporting aggregate update latency, per-batch duration, and last processed block info for live monitoring.
 
 ---
 
@@ -329,7 +317,7 @@ Combines three storage tiers:
 **Problem**: MetaMask reveals every address you query to Infura
 **Solution**: Plinko PIR wallet with Privacy Mode
 
-- Download 70 MB hint (one-time)
+- Download 70 MB snapshot package (derive hint locally, one-time)
 - Query any balance in 5ms (private!)
 - Update with 60 KB deltas every block
 - Cost: $0.09-0.14/user/month
@@ -362,15 +350,15 @@ Combines three storage tiers:
 
 ```
 Client:
-  1. Download hint (70 MB, one-time)
+  1. Download snapshot + deltas (~43 MB database + 128 MB address mapping) and derive hint locally
   2. Generate PIR query for account index
   3. Send encrypted query to server
   4. Decrypt response → balance
 
 Server:
-  1. Store database (8.4M × 8 bytes = 67 MB)
+  1. Store database (5.6M × 8 bytes ≈ 43 MB)
   2. Receive client query (encrypted)
-  3. Matrix multiplication (5ms)
+  3. Matrix multiplication (≈5 ms)
   4. Return encrypted response
 
 Update:
@@ -383,12 +371,11 @@ Update:
 ### Performance Metrics
 
 ```
-Database Generation: 45 seconds (8.4M accounts)
-Hint Generation: 12 seconds
+Snapshot Build (parquet → bin): ~30 seconds for 142 files (5.6M addresses)
 Query Latency: 5ms average
 Update Latency: 23.75ms per 2,000 accounts
-Hint Size: 70 MB
-Delta Size: ~60 KB per block
+Client Hint Buffer: ~43 MB (derived locally)
+Delta Size: ~60 KB per block (simulated; lower for real mainnet diffs)
 Bandwidth (CDN): $120/month per 10K users (or FREE on R2)
 ```
 
@@ -457,7 +444,7 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for full configuration guide.
 | **Direct RPC** | ❌ None | Free | 50ms | Minimal |
 | **Full Node** | ✅ Perfect | $100-300/mo | <1ms | 1+ TB sync |
 | **VPN + RPC** | ⚠️ IP only | $5-10/mo | 100ms | Minimal |
-| **Plinko PIR** | ✅ Perfect | **$0.09-0.14/mo** | **5ms** | **70 MB hint** |
+| **Plinko PIR** | ✅ Perfect | **$0.09-0.14/mo** | **5ms** | **70 MB snapshot** |
 
 **Plinko PIR**: Best privacy-cost-performance balance
 

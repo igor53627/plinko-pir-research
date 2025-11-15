@@ -7,25 +7,23 @@ shared/data/*
 shared/logs/*
 !shared/logs/.gitkeep
 
+# Real Ethereum data files (kept in repo)
+!data/*.bin
+
+# Imported parquet batches
+raw_balances/
+
 # Docker
 .docker/
 
 # Node modules
-services/ambire-wallet/node_modules/
-services/ambire-wallet/dist/
-services/piano-pir-server/node_modules/
+node_modules/
 services/rabby-wallet/node_modules/
 services/rabby-wallet/dist/
-node_modules/
 
 # Python
 services/db-generator/__pycache__/
 services/db-generator/*.pyc
-
-# Go build artifacts
-services/piano-hint-generator/piano-pir/bin/
-services/plinko-update-service/piano-pir/bin/
-services/piano-pir-server/piano-pir/bin/
 
 # IDE
 .vscode/

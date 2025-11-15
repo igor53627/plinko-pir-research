@@ -1,6 +1,6 @@
 # Plinko Update Service (Go)
 
-**Purpose**: Real-time incremental PIR hint updates for private Ethereum queries
+**Purpose**: Maintain the canonical Plinko PIR database, publish versioned public snapshots + manifests, and stream incremental XOR deltas for clients.
 
 ## ⭐ Key Innovation
 
@@ -12,10 +12,13 @@ This service demonstrates **Plinko's O(1) incremental updates** - the breakthrou
 
 ## Configuration
 
-- **Input**: `/data/hint.bin` (Piano-formatted database with metadata)
-- **Output**: `/data/deltas/delta-XXXXXX.bin` (incremental hint updates)
-- **Cache Mode**: Enabled (79× speedup, 64 MB memory)
-- **Simulated Changes**: 2,000 accounts per 12-second block
+- **Canonical DB**: `/data/database.bin` (built via `scripts/build_database_from_parquet.py`)
+- **Address Mapping**: `/data/address-mapping.bin`
+- **Public Snapshot Output**: `/public/snapshots/<version>/` (database + `manifest.json`)
+- **Public Deltas**: `/public/deltas/delta-XXXXXX.bin`
+- **Cache Mode**: Enabled (dynamic size based on DB entries)
+- **Update Source**: Simulated 2,000-account batches (default) or live Hypersync RPC when `PLINKO_UPDATE_SIMULATED=false` (configure `PLINKO_UPDATE_RPC_URL` and optional `PLINKO_UPDATE_RPC_TOKEN`)
+- **Metrics**: `/metrics` HTTP endpoint exposes aggregate latency stats for batches/blocks alongside `/health`
 
 ## Performance
 
@@ -68,11 +71,12 @@ docker-compose up plinko-update-service
 # Build service
 docker-compose build plinko-update-service
 
-# Run service (waits for hint.bin)
+# Run service (waits for database.bin)
 docker-compose run --rm plinko-update-service
 
-# Check delta files
-ls -lh shared/data/deltas/
+# Check published snapshot + deltas
+ls -lh public-data/snapshots/
+ls -lh public-data/deltas/
 ```
 
 ### Health Check
@@ -81,7 +85,33 @@ ls -lh shared/data/deltas/
 curl http://localhost:3001/health
 ```
 
-## Output Format
+## Public Artifacts
+
+### Snapshot Packages (`/public/snapshots/<version>/`)
+
+- `database.bin` – raw 8-byte balances copied from `/data/database.bin`
+- `manifest.json` – metadata used by clients to derive hints locally
+- `latest` symlink – points to the most recent version so wallets can fetch `/snapshots/latest/manifest.json`
+
+**Manifest schema:**
+```json
+{
+  "version": "sha256-5b8c7c2d0f21",
+  "generated_at": "2025-02-14T21:04:11Z",
+  "db_size": 10976970,
+  "chunk_size": 8192,
+  "set_size": 1340,
+  "files": [
+    {
+      "path": "database.bin",
+      "size": 87818240,
+      "sha256": "5b8c7c2d0f21c5f0..."
+    }
+  ]
+}
+```
+
+### Delta Files (`/public/deltas/`)
 
 ### Delta File Structure
 
@@ -169,13 +199,13 @@ func (s *PlinkoUpdateService) monitorBlocks() {
 
 ## Troubleshooting
 
-**Problem**: Timeout waiting for hint.bin
-- Ensure piano-hint-generator completed successfully
-- Check hint-generator logs for errors
+**Problem**: Timeout waiting for database.bin
+- Ensure `scripts/build_database_from_parquet.py` produced fresh artifacts
+- Check database generator logs for errors
 
 **Problem**: No delta files created
 - Check Anvil is mining blocks (12s intervals)
-- Verify service has write access to /data/deltas/
+- Verify service has write access to `/public/deltas/`
 - Look for error messages in service logs
 
 **Problem**: High memory usage (>200 MB)
@@ -251,11 +281,22 @@ Memory: 64 MB
 Speedup: 79× (1.88 ms → 23.75 μs)
 ```
 
+### Local Benchmark Harness
+
+Use the lightweight CLI + script to sanity-check update latency on real hardware:
+
+```bash
+./scripts/bench-updates.sh             # runs go run -tags bench ... over sample data
+BENCH_ITER=200 ./scripts/bench-updates.sh   # customize batches
+```
+
+The benchmark reuses the production update manager, so the printed averages mirror what `/metrics` reports in live environments.
+
 ## Next Steps
 
 After Plinko Update Service:
 1. **Plinko PIR Server**: Handle private queries (~5ms latency)
-2. **CDN Mock**: Serve hints and deltas to clients
+2. **CDN Mock**: Serve snapshot packages + delta feeds to clients
 3. **Ambire Wallet**: Client integration with Privacy Mode
 4. **Integration Testing**: End-to-end flow validation
 

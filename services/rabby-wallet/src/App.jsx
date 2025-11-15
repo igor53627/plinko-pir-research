@@ -4,7 +4,8 @@ import { PrivacyMode } from './components/PrivacyMode';
 import './App.css';
 
 function WalletDemo() {
-  const [address, setAddress] = useState('0x1000000000000000000000000000000000000042');
+  // Use a real Ethereum address with balance for testing
+  const [address, setAddress] = useState('0x00000000219ab540356cbb839cbe05303d7705fa');
   const [balance, setBalance] = useState(null);
   const [visualization, setVisualization] = useState(null);
   const [isQuerying, setIsQuerying] = useState(false);
@@ -172,7 +173,7 @@ function WalletDemo() {
                     <div className="step-content">
                       <h4>Client-Side Verification</h4>
                       <p className="step-desc" style={{marginTop: 0, marginBottom: '0.75rem'}}>
-                        <strong>How verification works:</strong> You have a local copy of the database (the "hint").
+                        <strong>How verification works:</strong> You have a local copy of the database (a locally derived "hint").
                         Using the same PRF key, you XOR the same {visualization.prfSetSize} indices from your local hint.
                         Then you compare your result with what the server sent. If they match (delta = 0), your hint is perfectly synchronized with the server's database!
                         If they don't match, the delta tells you what changed.
@@ -185,7 +186,7 @@ function WalletDemo() {
                             ≈ {(BigInt(visualization.hintParity) / BigInt(10**18)).toString()} ETH (truncated)
                           </span>
                           <span style={{display: 'block', marginTop: '0.25rem', fontSize: '0.85em', color: '#555'}}>
-                            This is the XOR of the same {visualization.prfSetSize} entries from your local hint file
+                            This is the XOR of the same {visualization.prfSetSize} entries from your locally derived hint
                           </span>
                         </div>
                         <div className="xor-item">
@@ -243,7 +244,7 @@ function WalletDemo() {
 
                 <div className="pir-stats">
                   <div className="stat-item">
-                    <strong>Database Size:</strong> {(visualization.chunkSize * visualization.setSize).toLocaleString()} entries
+                    <strong>Database Size:</strong> {(visualization.dbSize ?? (visualization.chunkSize * visualization.setSize)).toLocaleString()} entries
                   </div>
                   <div className="stat-item">
                     <strong>Chunk Size:</strong> {visualization.chunkSize.toLocaleString()}
@@ -252,38 +253,23 @@ function WalletDemo() {
                     <strong>Privacy Set:</strong> {visualization.prfSetSize} entries queried
                   </div>
                 </div>
+
+                {visualization.saturated && (
+                  <div className="pir-warning">
+                    <strong>Heads up:</strong> This dataset stores balances as 64-bit integers for speed. Your account exceeds that range, so we fetched
+                    the precise value from the fallback RPC after verifying the private query. Private membership is still proven, but the amount itself
+                    comes from the RPC response.
+                    {visualization.fallbackBalanceWei && (
+                      <span style={{ display: 'block', marginTop: '0.35rem' }}>
+                        Exact balance (RPC): {formatBalance(BigInt(visualization.fallbackBalanceWei))} ETH
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
-      </div>
-
-      <div className="info-section">
-        <h2>About This PoC</h2>
-        <div className="info-grid">
-          <div className="info-card">
-            <h3>🎯 Goal</h3>
-            <p>Demonstrate private Ethereum balance queries using Plinko PIR with Rabby Wallet</p>
-          </div>
-
-          <div className="info-card">
-            <h3>⚡ Performance</h3>
-            <p>
-              <strong>Query:</strong> ~5ms latency<br />
-              <strong>Updates:</strong> 23.75 μs per 2,000 accounts<br />
-              <strong>Hint:</strong> ~70 MB one-time download
-            </p>
-          </div>
-
-          <div className="info-card">
-            <h3>🔬 Scale</h3>
-            <p>
-              <strong>Database:</strong> 8,388,608 accounts (2^23)<br />
-              <strong>Technology:</strong> Plinko PIR<br />
-              <strong>Privacy:</strong> Information-theoretic
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
