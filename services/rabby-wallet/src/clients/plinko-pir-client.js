@@ -118,7 +118,7 @@ export class PlinkoPIRClient {
     let hashBytes;
     const subtle = browserCrypto?.subtle;
     if (subtle && typeof subtle.digest === 'function') {
-      const hashBuffer = await subtle.digest('SHA-256', bytes.buffer);
+      const hashBuffer = await subtle.digest('SHA-256', bytes);
       hashBytes = new Uint8Array(hashBuffer);
     } else {
       console.warn('⚠️ WebCrypto subtle API unavailable; falling back to @noble/hashes for snapshot verification');

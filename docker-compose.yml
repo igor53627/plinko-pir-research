@@ -31,9 +31,7 @@ services:
   eth-mock:
     build: ./services/eth-mock
     container_name: plinko-pir-eth-mock
-    # Expose to host for browser access in public mode
-    ports:
-      - "8545:8545"
+    # Internal only - not exposed to host
     volumes:
       - shared-data:/data
     # Healthcheck disabled - curl not available in container
