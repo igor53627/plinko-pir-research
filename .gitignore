@@ -47,3 +47,46 @@ coverage/
 *.kubeconfig
 *-vke-*.yaml
 .kube/config
+
+# Research artifacts (archived)
+**/TDD_*.md
+**/BUG_*_REPORT.md
+**/BUG_*_DELIVERABLES.md
+**/DELIVERY_REPORT.md
+**/TEST_COVERAGE_*.md
+**/TEST_EXECUTION_*.md
+**/TEST_SUITE_*.md
+**/VALIDATION_*.md
+**/FINAL_*.md
+**/BEFORE_AFTER_*.md
+**/PR_REVIEW_*.md
+**/TABLE_PRP_IMPLEMENTATION.md
+
+# Debug and demo files
+**/debug_*.go
+**/demo_*.go
+**/*_debug.go
+**/correct_inverse.go
+**/distribution_analysis.go
+**/plinko_inverse_demo.go
+
+# Test execution logs
+test_results*.txt
+final_test_run.txt
+
+# Archive directories
+/tmp/plinko-research-archive-*
+
+# Build artifacts
+services/state-syncer/state-syncer
+services/plinko-pir-server/pir-server
+*.exe
+
+# Backup directories
+.claude-backups/
+.claude-collective/metrics/
+
+# QA test output (temporary)
+**/qa_test_results.txt
+**/cleanup_test_results.txt
+**/python_qa_results.txt
