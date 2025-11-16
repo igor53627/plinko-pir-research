@@ -39,8 +39,6 @@ func NewIPRF(key PrfKey128, n uint64, m uint64) *IPRF {
 		treeDepth: treeDepth,
 	}
 }
-
-<<<<<<< HEAD
 // GenerateRandomKey creates a cryptographically secure random key
 func GenerateRandomKey() PrfKey128 {
 	var key PrfKey128
