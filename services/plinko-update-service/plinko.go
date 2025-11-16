@@ -131,12 +131,19 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 
 // applyDatabaseUpdate updates a single database entry
 func (pm *PlinkoUpdateManager) applyDatabaseUpdate(update DBUpdate) {
-	// Update the database in place
+	// Validate input
+	if update.Index >= pm.dbSize {
+		// Index out of valid range - skip
+		return
+	}
+	
+	// Calculate the starting position in the flat database array
+	// Each DBEntry occupies DBEntryLength uint64 values
 	startIdx := update.Index * DBEntryLength
-	endIdx := (update.Index + 1) * DBEntryLength
-
-	if endIdx > uint64(len(pm.database)) {
-		// Index out of bounds - skip
+	
+	// Check bounds before proceeding
+	if startIdx+DBEntryLength > uint64(len(pm.database)) {
+		// Database array too small - skip
 		return
 	}
 

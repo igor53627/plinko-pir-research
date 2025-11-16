@@ -21,8 +21,12 @@ import (
 )
 
 const (
-	DBEntrySize   = 8
-	DBEntryLength = 1 // DBEntrySize / 8
+	DBEntrySize   = 8  // Size of each database entry in bytes
+	DBEntryLength = 1  // Number of uint64 values per database entry (DBEntrySize / 8)
+	
+	// Note: The current implementation assumes DBEntryLength = 1.
+	// If this changes, the indexing logic in applyDatabaseUpdate and other
+	// functions may need to be reviewed for correctness.
 
 	CacheEnabled      = true
 	BlockProcessDelay = 100 * time.Millisecond
