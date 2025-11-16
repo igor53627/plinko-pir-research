@@ -62,7 +62,9 @@ func (iprf *IPRF) collectBallsInBin(
 	
 	if startIdx == endIdx {
 		// Single ball - check if it goes to target bin
-		ballResult := iprf.traceBall(startIdx, n, m)
+		// Convert to relative index within current domain [0, n)
+		relativeBallIndex := uint64(0)
+		ballResult := iprf.traceBall(relativeBallIndex, n, m)
 		if ballResult == targetBin {
 			return []uint64{startIdx}
 		}
