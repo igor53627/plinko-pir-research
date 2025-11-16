@@ -5,8 +5,12 @@ import (
 )
 
 const (
-	DBEntrySize   = 8
-	DBEntryLength = 1
+	DBEntrySize   = 8  // Size of each database entry in bytes
+	DBEntryLength = 1  // Number of uint64 values per database entry
+	
+	// Note: The current implementation assumes DBEntryLength = 1.
+	// If this changes, the indexing logic in applyDatabaseUpdate and other
+	// functions may need to be reviewed for correctness.
 )
 
 type DBEntry [DBEntryLength]uint64
@@ -40,18 +44,32 @@ type PlinkoUpdateManager struct {
 	useCacheMode bool     // If true, use pre-computed cache instead of iPRF calls
 }
 
-// NewPlinkoUpdateManager creates a new update manager
+// NewPlinkoUpdateManager creates a new update manager with secure key generation
 func NewPlinkoUpdateManager(database []uint64, dbSize, chunkSize, setSize uint64) *PlinkoUpdateManager {
 	// Create iPRF for mapping database indices to hint sets
 	// Domain: n = DBSize (number of database entries)
 	// Range: m = SetSize (number of chunks/hint sets)
 
-	// Create iPRF with deterministic key for testing
-	var key PrfKey128
-	for i := 0; i < 16; i++ {
-		key[i] = byte(i)
-	}
+	// Use cryptographically secure random key for production
+	key := GenerateRandomKey()
 
+	iprf := NewIPRF(key, dbSize, setSize)
+
+	return &PlinkoUpdateManager{
+		database:     database,
+		iprf:         iprf,
+		chunkSize:    chunkSize,
+		setSize:      setSize,
+		dbSize:       dbSize,
+		indexToHint:  nil,
+		useCacheMode: false,
+	}
+}
+
+// NewPlinkoUpdateManagerWithKey creates a new update manager with a specific key
+// This allows for deterministic testing or key management
+func NewPlinkoUpdateManagerWithKey(database []uint64, dbSize, chunkSize, setSize uint64, key PrfKey128) *PlinkoUpdateManager {
+	// Create iPRF for mapping database indices to hint sets
 	iprf := NewIPRF(key, dbSize, setSize)
 
 	return &PlinkoUpdateManager{
@@ -138,12 +156,19 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 
 // applyDatabaseUpdate updates a single database entry
 func (pm *PlinkoUpdateManager) applyDatabaseUpdate(update DBUpdate) {
-	// Update the database in place
+	// Validate input
+	if update.Index >= pm.dbSize {
+		// Index out of valid range - skip
+		return
+	}
+	
+	// Calculate the starting position in the flat database array
+	// Each DBEntry occupies DBEntryLength uint64 values
 	startIdx := update.Index * DBEntryLength
-	endIdx := (update.Index + 1) * DBEntryLength
-
-	if endIdx > uint64(len(pm.database)) {
-		// Index out of bounds - skip
+	
+	// Check bounds before proceeding
+	if startIdx+DBEntryLength > uint64(len(pm.database)) {
+		// Database array too small - skip
 		return
 	}
 

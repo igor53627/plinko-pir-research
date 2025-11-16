@@ -105,11 +105,14 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 
 		// Step 2: Find affected hint set
 		// Use pre-computed cache if available, otherwise compute via iPRF
-		hintSetID := pm.iprf.Forward(update.Index)
-		if pm.useCacheMode && update.Index < uint64(len(pm.indexToHint)) {
-			// O(1) lookup from pre-computed cache
-			hintSetID = pm.indexToHint[update.Index]
-		}
+		var hintSetID uint64
+			if pm.useCacheMode && update.Index < uint64(len(pm.indexToHint)) {
+				// O(1) lookup from pre-computed cache - skip expensive iPRF computation
+				hintSetID = pm.indexToHint[update.Index]
+			} else {
+				// Compute via iPRF - only when cache is not available
+				hintSetID = pm.iprf.Forward(update.Index)
+			}
 
 		// Step 3: Compute XOR delta
 		var delta DBEntry
@@ -131,12 +134,19 @@ func (pm *PlinkoUpdateManager) ApplyUpdates(updates []DBUpdate) ([]HintDelta, ti
 
 // applyDatabaseUpdate updates a single database entry
 func (pm *PlinkoUpdateManager) applyDatabaseUpdate(update DBUpdate) {
-	// Update the database in place
+	// Validate input
+	if update.Index >= pm.dbSize {
+		// Index out of valid range - skip
+		return
+	}
+	
+	// Calculate the starting position in the flat database array
+	// Each DBEntry occupies DBEntryLength uint64 values
 	startIdx := update.Index * DBEntryLength
-	endIdx := (update.Index + 1) * DBEntryLength
-
-	if endIdx > uint64(len(pm.database)) {
-		// Index out of bounds - skip
+	
+	// Check bounds before proceeding
+	if startIdx+DBEntryLength > uint64(len(pm.database)) {
+		// Database array too small - skip
 		return
 	}
 
