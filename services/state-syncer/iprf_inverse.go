@@ -80,11 +80,15 @@ func (iprf *IPRF) enumerateBallsInBinRecursive(
 	// Determine which subtree contains our target bin
 	if targetBin <= mid {
 		// Target is in left subtree
-		newEndIdx := startIdx + leftCount - 1
-		if newEndIdx >= endIdx {
-			newEndIdx = endIdx
+		if leftCount > 0 {
+			newEndIdx := startIdx + leftCount - 1
+			if newEndIdx >= endIdx {
+				newEndIdx = endIdx
+			}
+			iprf.enumerateBallsInBinRecursive(targetBin, low, mid, leftCount, startIdx, newEndIdx, result)
 		}
-		iprf.enumerateBallsInBinRecursive(targetBin, low, mid, leftCount, startIdx, newEndIdx, result)
+		// If leftCount is 0, the left subtree is empty, so we can't find the target there
+		// This should not happen in a correct iPRF construction, but we handle it gracefully
 	} else {
 		// Target is in right subtree
 		newStartIdx := startIdx + leftCount
@@ -128,11 +132,19 @@ func (iprf *IPRF) GetDistributionStats() map[string]interface{} {
 			sizes = append(sizes, size)
 		}
 		
-		// Sort to find min/max/median
-		sort.Ints(sizes)
-		stats["actual_min_preimage"] = sizes[0]
-		stats["actual_max_preimage"] = sizes[len(sizes)-1]
-		stats["actual_median_preimage"] = sizes[len(sizes)/2]
+		// Only compute statistics if we have data
+		if len(sizes) > 0 {
+			// Sort to find min/max/median
+			sort.Ints(sizes)
+			stats["actual_min_preimage"] = sizes[0]
+			stats["actual_max_preimage"] = sizes[len(sizes)-1]
+			stats["actual_median_preimage"] = sizes[len(sizes)/2]
+		} else {
+			// Handle empty distribution case
+			stats["actual_min_preimage"] = 0
+			stats["actual_max_preimage"] = 0
+			stats["actual_median_preimage"] = 0
+		}
 		stats["total_outputs"] = len(distribution)
 	}
 	

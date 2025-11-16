@@ -52,19 +52,16 @@ func (prp *PRP) permuteCycleWalking(x uint64, n uint64) uint64 {
 	var input [aes.BlockSize]byte
 	var output [aes.BlockSize]byte
 	
-	// Use fixed round constant for deterministic behavior
-	const round = uint64(0)
-	
 	// Start with the input
 	current := x
 	
 	// Use cycle walking: encrypt until we get a value in range
 	// Limit attempts to prevent infinite loops in edge cases
 	for attempts := 0; attempts < 100; attempts++ {
-		// Create input block: [current (8 bytes)][round (8 bytes)]
-		// Use the same round constant to maintain permutation property
+		// Create input block: [current (8 bytes)][attempt counter (8 bytes)]
+		// Use attempt counter as round to ensure different inputs produce different outputs
 		binary.BigEndian.PutUint64(input[0:8], current)
-		binary.BigEndian.PutUint64(input[8:16], round)
+		binary.BigEndian.PutUint64(input[8:16], uint64(attempts))
 		
 		// Encrypt
 		prp.block.Encrypt(output[:], input[:])
