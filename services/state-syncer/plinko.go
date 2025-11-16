@@ -40,18 +40,32 @@ type PlinkoUpdateManager struct {
 	useCacheMode bool     // If true, use pre-computed cache instead of iPRF calls
 }
 
-// NewPlinkoUpdateManager creates a new update manager
+// NewPlinkoUpdateManager creates a new update manager with secure key generation
 func NewPlinkoUpdateManager(database []uint64, dbSize, chunkSize, setSize uint64) *PlinkoUpdateManager {
 	// Create iPRF for mapping database indices to hint sets
 	// Domain: n = DBSize (number of database entries)
 	// Range: m = SetSize (number of chunks/hint sets)
 
-	// Create iPRF with deterministic key for testing
-	var key PrfKey128
-	for i := 0; i < 16; i++ {
-		key[i] = byte(i)
-	}
+	// Use cryptographically secure random key for production
+	key := GenerateRandomKey()
 
+	iprf := NewIPRF(key, dbSize, setSize)
+
+	return &PlinkoUpdateManager{
+		database:     database,
+		iprf:         iprf,
+		chunkSize:    chunkSize,
+		setSize:      setSize,
+		dbSize:       dbSize,
+		indexToHint:  nil,
+		useCacheMode: false,
+	}
+}
+
+// NewPlinkoUpdateManagerWithKey creates a new update manager with a specific key
+// This allows for deterministic testing or key management
+func NewPlinkoUpdateManagerWithKey(database []uint64, dbSize, chunkSize, setSize uint64, key PrfKey128) *PlinkoUpdateManager {
+	// Create iPRF for mapping database indices to hint sets
 	iprf := NewIPRF(key, dbSize, setSize)
 
 	return &PlinkoUpdateManager{

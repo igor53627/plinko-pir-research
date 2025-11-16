@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/binary"
 	"math"
 )
@@ -37,6 +38,34 @@ func NewIPRF(key PrfKey128, n uint64, m uint64) *IPRF {
 		range_:    m,
 		treeDepth: treeDepth,
 	}
+}
+
+// GenerateRandomKey creates a cryptographically secure random key
+func GenerateRandomKey() PrfKey128 {
+	var key PrfKey128
+	_, err := rand.Read(key[:])
+	if err != nil {
+		panic("failed to generate random key: " + err.Error())
+	}
+	return key
+}
+
+// GenerateDeterministicKey creates a deterministic key for testing (NOT for production)
+func GenerateDeterministicKey() PrfKey128 {
+	var key PrfKey128
+	for i := 0; i < 16; i++ {
+		key[i] = byte(i)
+	}
+	return key
+}
+
+// GenerateDeterministicKeyWithSeed creates a deterministic key from a seed (NOT for production)
+func GenerateDeterministicKeyWithSeed(seed uint64) PrfKey128 {
+	var key PrfKey128
+	for i := 0; i < 16; i++ {
+		key[i] = byte((seed + uint64(i)*17 + 1) % 256)
+	}
+	return key
 }
 
 // Forward evaluates the iPRF: maps x in [n] to y in [m]

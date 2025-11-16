@@ -11,7 +11,9 @@ func TestDebugInverse(t *testing.T) {
 	n := uint64(100)
 	m := uint64(10)
 	
-	var prpKey, baseKey PrfKey128
+	prpKey := GenerateDeterministicKey()
+	baseKey := GenerateDeterministicKey()
+	// Modify keys to match original test pattern
 	for i := 0; i < 16; i++ {
 		prpKey[i] = byte(i)
 		baseKey[i] = byte(i + 16)

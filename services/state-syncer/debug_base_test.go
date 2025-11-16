@@ -10,11 +10,8 @@ func TestDebugBaseIPRF(t *testing.T) {
 	n := uint64(1000) // domain size
 	m := uint64(100)  // range size
 	
-	// Create deterministic key (same as test)
-	var key PrfKey128
-	for i := 0; i < 16; i++ {
-		key[i] = byte(i * 17 + 1) // Same as test
-	}
+	// Create deterministic key for testing
+	key := GenerateDeterministicKey()
 	
 	// Create base iPRF
 	iprf := NewIPRF(key, n, m)

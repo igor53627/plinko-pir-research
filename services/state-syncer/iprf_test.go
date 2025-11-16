@@ -15,10 +15,7 @@ func TestIPRFForwardBackward(t *testing.T) {
 	m := uint64(100)  // range size
 	
 	// Create deterministic key for reproducible tests
-	var key PrfKey128
-	for i := 0; i < 16; i++ {
-		key[i] = byte(i) // Deterministic key
-	}
+	key := GenerateDeterministicKey()
 	
 	// Create base iPRF (proven to work correctly)
 	iprf := NewIPRF(key, n, m)
@@ -51,10 +48,9 @@ func TestIPRFDistribution(t *testing.T) {
 	n := uint64(10000) // domain size
 	m := uint64(100)   // range size
 	
-	// Create random keys
-	var prpKey, baseKey PrfKey128
-	rand.Read(prpKey[:])
-	rand.Read(baseKey[:])
+	// Use deterministic keys for reproducible test results
+	prpKey := GenerateDeterministicKeyWithSeed(42)
+	baseKey := GenerateDeterministicKeyWithSeed(24)
 	
 	// Create enhanced iPRF
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
@@ -101,10 +97,9 @@ func TestIPRFInverseCorrectness(t *testing.T) {
 	n := uint64(1000)
 	m := uint64(50)
 	
-	// Create random keys
-	var prpKey, baseKey PrfKey128
-	rand.Read(prpKey[:])
-	rand.Read(baseKey[:])
+	// Use deterministic keys for reproducible test results
+	prpKey := GenerateDeterministicKeyWithSeed(42)
+	baseKey := GenerateDeterministicKeyWithSeed(24)
 	
 	// Create enhanced iPRF
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
@@ -334,7 +329,9 @@ func TestIntegration(t *testing.T) {
 	m := uint64(1_024)     // 1K hint sets
 	
 	// Create keys (deterministic for reproducibility)
-	var prpKey, baseKey PrfKey128
+	prpKey := GenerateDeterministicKey()
+	baseKey := GenerateDeterministicKey()
+	// Modify keys to match original test pattern
 	for i := 0; i < 16; i++ {
 		prpKey[i] = byte(i)
 		baseKey[i] = byte(i + 16)
