@@ -136,11 +136,11 @@ func testEnhancedIPRF() {
 	n := uint64(10000)
 	m := uint64(100)
 	
-	var prpKey, baseKey PrfKey128
-	for i := 0; i < 16; i++ {
-		prpKey[i] = byte(i)
-		baseKey[i] = byte(i + 16)
-	}
+	// Use deterministic keys for demo
+	prpKey := GenerateDeterministicKey()
+	baseKey := GenerateDeterministicKey()
+	// Modify baseKey slightly for differentiation
+	baseKey[0] = 0xFF
 	
 	iprf := NewEnhancedIPRF(prpKey, baseKey, n, m)
 	
