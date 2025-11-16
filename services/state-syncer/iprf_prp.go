@@ -106,18 +106,25 @@ func (prp *PRP) InversePermute(y uint64, n uint64) uint64 {
 	}
 	
 	// Use brute force inverse (feasible for small domains)
-	return prp.inverseBruteForce(y, n)
+	x, err := prp.inverseBruteForce(y, n)
+	if err != nil {
+		// This should never happen in a correct PRP implementation
+		// Panic to expose the bug immediately rather than silently returning wrong results
+		panic(err.Error())
+	}
+	return x
 }
 
 // inverseBruteForce finds the original input by trying all possibilities
 // This is feasible for the domain sizes used in iPRF construction
-func (prp *PRP) inverseBruteForce(y uint64, n uint64) uint64 {
+// Returns an error if no preimage is found, which indicates a serious PRP implementation bug
+func (prp *PRP) inverseBruteForce(y uint64, n uint64) (uint64, error) {
 	for x := uint64(0); x < n; x++ {
 		if prp.Permute(x, n) == y {
-			return x
+			return x, nil
 		}
 	}
-	return 0 // Should never reach here if permutation is correct
+	return 0, fmt.Errorf("inverseBruteForce: no preimage found for value %d in domain [0, %d) - this indicates a serious PRP implementation bug where the permutation is not a proper bijection", y, n)
 }
 
 
