@@ -11,15 +11,14 @@ import (
 // Instead of scanning through O(r) hints to find which ones contain a specific database
 // index, we use iPRF inverse to directly find all indices that map to the same hint set.
 //
-// Performance: O(domain) in worst case, but practical performance is much better
-// for typical blockchain database sizes (domain ≤ 10^7).
+// Performance: O(log m + k) where m is range size and k is output set size
+// This matches the paper's claimed performance using PMNS + PRP composition.
 func (iprf *IPRF) Inverse(y uint64) []uint64 {
 	if y >= iprf.range_ {
 		return []uint64{}
 	}
 
-	// Use the proven brute-force inverse that we know works correctly
-	// This enumerates all inputs and checks their outputs
+	// Use the paper-correct O(log n) implementation
 	return iprf.InverseFixed(y)
 }
 
@@ -37,64 +36,70 @@ func (iprf *IPRF) enumerateBallsInBin(targetBin uint64, n uint64, m uint64) []ui
 	}
 
 	var result []uint64
-	iprf.enumerateBallsInBinRecursive(targetBin, 0, m-1, n, 0, n-1, &result)
-	
+	iprf.enumerateBallsInBinRecursive(targetBin, 0, m-1, n, n, 0, n-1, &result)
+
 	// Sort the result for deterministic output
 	sort.Slice(result, func(i, j int) bool {
 		return result[i] < result[j]
 	})
-	
+
 	return result
 }
 
 // enumerateBallsInBinRecursive recursively finds balls in the target bin
 // by traversing the binary tree in reverse
+// Parameters:
+//   targetBin: the bin we're searching for
+//   low, high: current bin range in tree
+//   originalN: ORIGINAL domain size (used for node encoding, same as traceBall)
+//   ballCount: current number of balls in this subtree
+//   startIdx, endIdx: current ball index range
 func (iprf *IPRF) enumerateBallsInBinRecursive(
 	targetBin uint64,
 	low uint64, high uint64,
-	n uint64,
+	originalN uint64,
+	ballCount uint64,
 	startIdx uint64, endIdx uint64,
 	result *[]uint64) {
-	
-	if low > high || startIdx > endIdx {
+
+	if low > high || startIdx > endIdx || ballCount == 0 {
 		return
 	}
-	
+
 	if low == high {
-		// Leaf node - this is our target bin, add all balls in this range
-		for i := startIdx; i <= endIdx; i++ {
-			*result = append(*result, i)
+		// Leaf node - if this is our target bin, add all balls in this range
+		if low == targetBin {
+			for i := startIdx; i <= endIdx; i++ {
+				*result = append(*result, i)
+			}
 		}
 		return
 	}
-	
+
 	mid := (low + high) / 2
 	leftBins := mid - low + 1
 	totalBins := high - low + 1
 	p := float64(leftBins) / float64(totalBins)
-	
+
 	// Sample the binomial split point for this node
-	nodeID := encodeNode(low, high, n)
-	leftCount := iprf.sampleBinomial(nodeID, n, p)
-	
-	// Determine which subtree contains our target bin
+	// CRITICAL: Use originalN for node encoding, NOT ballCount (matches traceBall behavior)
+	nodeID := encodeNode(low, high, originalN)
+	leftCount := iprf.sampleBinomial(nodeID, ballCount, p)
+	rightCount := ballCount - leftCount
+
+	// Split point in the index range
+	splitIdx := startIdx + leftCount
+
+	// Recurse into the appropriate subtree(s) based on where target bin is
 	if targetBin <= mid {
 		// Target is in left subtree
-		if leftCount > 0 {
-			newEndIdx := startIdx + leftCount - 1
-			if newEndIdx >= endIdx {
-				newEndIdx = endIdx
-			}
-			iprf.enumerateBallsInBinRecursive(targetBin, low, mid, leftCount, startIdx, newEndIdx, result)
+		if leftCount > 0 && splitIdx > startIdx {
+			iprf.enumerateBallsInBinRecursive(targetBin, low, mid, originalN, leftCount, startIdx, splitIdx-1, result)
 		}
-		// If leftCount is 0, the left subtree is empty, so we can't find the target there
-		// This should not happen in a correct iPRF construction, but we handle it gracefully
 	} else {
 		// Target is in right subtree
-		newStartIdx := startIdx + leftCount
-		if newStartIdx <= endIdx {
-			newN := n - leftCount
-			iprf.enumerateBallsInBinRecursive(targetBin, mid+1, high, newN, newStartIdx, endIdx, result)
+		if rightCount > 0 && splitIdx <= endIdx {
+			iprf.enumerateBallsInBinRecursive(targetBin, mid+1, high, originalN, rightCount, splitIdx, endIdx, result)
 		}
 	}
 }

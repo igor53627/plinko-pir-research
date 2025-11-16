@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"math"
 )
@@ -40,6 +41,8 @@ func NewIPRF(key PrfKey128, n uint64, m uint64) *IPRF {
 	}
 }
 // GenerateRandomKey creates a cryptographically secure random key
+// WARNING: For production use, prefer DeriveIPRFKey for deterministic key derivation
+// Random keys break persistence across server restarts, invalidating cached hints
 func GenerateRandomKey() PrfKey128 {
 	var key PrfKey128
 	_, err := rand.Read(key[:])
@@ -47,6 +50,45 @@ func GenerateRandomKey() PrfKey128 {
 		panic("failed to generate random key: " + err.Error())
 	}
 	return key
+}
+
+// DeriveIPRFKey derives a deterministic iPRF key from master secret and context
+// This ensures the same key is generated across server restarts, preventing
+// hint invalidation.
+//
+// BUG #6 FIX: Using random keys (GenerateRandomKey) causes different iPRF mappings
+// after each server restart, invalidating all cached hints. Paper (Section 5.2)
+// specifies using PRF-based key derivation from a master secret.
+//
+// Paper context (Section 5.2):
+// "The n/r keys for each of the iPRFs can also be pseudorandomly generated
+// using a PRF. Therefore, this only requires storing a single PRF key."
+//
+// Parameters:
+//   - masterSecret: Long-term secret stored securely (e.g., from config/KMS)
+//   - context: Application-specific context string (e.g., "plinko-iprf-v1")
+//
+// Returns: Deterministic 128-bit key for iPRF
+func DeriveIPRFKey(masterSecret []byte, context string) PrfKey128 {
+	h := sha256.New()
+	h.Write(masterSecret)
+	h.Write([]byte("iprf-key-derivation-v1")) // Domain separator
+	h.Write([]byte(context))
+
+	var key PrfKey128
+	copy(key[:], h.Sum(nil)[:16])
+	return key
+}
+
+// NewIPRFFromMasterSecret creates iPRF with deterministic key derivation
+// Use this instead of NewIPRF(GenerateRandomKey(), ...) for production deployments
+//
+// Example usage:
+//   masterSecret := loadMasterSecret("/etc/app/master.key")
+//   iprf := NewIPRFFromMasterSecret(masterSecret, "plinko-iprf-v1", 8400000, 1024)
+func NewIPRFFromMasterSecret(masterSecret []byte, context string, domain uint64, range_ uint64) *IPRF {
+	key := DeriveIPRFKey(masterSecret, context)
+	return NewIPRF(key, domain, range_)
 }
 
 // GenerateDeterministicKey creates a deterministic key for testing (NOT for production)
@@ -106,7 +148,7 @@ func (iprf *IPRF) traceBall(xPrime uint64, n uint64, m uint64) uint64 {
 		uniform := (float64(prfOutput>>11) + 0.5) * invTwoTo53
 
 		// Use inverse CDF
-		leftCount := iprf.binomialInverseCDF(n, p, uniform)
+		leftCount := iprf.binomialInverseCDF(ballCount, p, uniform)
 
 		// Determine if ball xPrime goes left or right
 		if ballIndex < leftCount {
@@ -137,8 +179,21 @@ func (iprf *IPRF) sampleBinomial(nodeID uint64, n uint64, p float64) uint64 {
 }
 
 // binomialInverseCDF computes inverse CDF of Binomial(n, p) at point u
+//
+// Edge cases:
+//   u <= 0.0 → returns 0 (no balls)
+//   u >= 1.0 → returns n (all balls)
+//   0 < u < 1 → returns k such that P(X ≤ k) ≥ u and P(X ≤ k-1) < u
 func (iprf *IPRF) binomialInverseCDF(n uint64, p float64, u float64) uint64 {
-	// Handle edge cases
+	// Handle u edge cases first (FIX #2: u=1.0 should return n)
+	if u <= 0.0 {
+		return 0
+	}
+	if u >= 1.0 {
+		return n
+	}
+
+	// Handle p edge cases
 	if p == 0 {
 		return 0
 	}
@@ -217,9 +272,31 @@ func (iprf *IPRF) GetPreimageSize() uint64 {
 
 // Helper functions
 
+// encodeNode creates a unique identifier for a tree node using cryptographic hash
+// This ensures no collisions even for large domain sizes (n > 2^16)
+//
+// BUG #7 FIX: Previous implementation used (low << 32) | (high << 16) | (n & 0xFFFF)
+// which truncated n to 16 bits, causing collisions when n > 65535.
+//
+// Paper requirement (Figure 4): Node must uniquely identify position in tree
+// for deterministic PRF evaluation: F(k, node)
+//
+// Hash-based approach guarantees uniqueness across all three parameters without
+// bit-width limitations while maintaining determinism.
 func encodeNode(low uint64, high uint64, n uint64) uint64 {
-	// Simple node encoding for PRF input
-	return (low << 32) | (high << 16) | (n & 0xFFFF)
+	// Use SHA-256 to guarantee uniqueness across all parameters
+	h := sha256.New()
+
+	// Encode all three parameters in big-endian format
+	var buf [24]byte
+	binary.BigEndian.PutUint64(buf[0:8], low)
+	binary.BigEndian.PutUint64(buf[8:16], high)
+	binary.BigEndian.PutUint64(buf[16:24], n)
+
+	h.Write(buf[:])
+
+	// Use first 8 bytes of hash as 64-bit node ID
+	return binary.BigEndian.Uint64(h.Sum(nil)[:8])
 }
 
 // invNormalCDF computes approximate inverse normal CDF
