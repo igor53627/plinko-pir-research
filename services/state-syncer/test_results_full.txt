@@ -1,0 +1,546 @@
+=== RUN   TestDebugBaseIPRF
+Testing base iPRF with n=1000, m=100
+✅ Base: Forward(29) = 3, Inverse(3) contains 29 (len=5)
+✅ Base: Forward(35) = 4, Inverse(4) contains 35 (len=11)
+✅ Base: Forward(42) = 4, Inverse(4) contains 42 (len=11)
+✅ Base: Forward(44) = 5, Inverse(5) contains 44 (len=7)
+✅ Base: Forward(47) = 5, Inverse(5) contains 47 (len=7)
+✅ Base: Forward(54) = 6, Inverse(6) contains 54 (len=5)
+✅ Base: Forward(55) = 6, Inverse(6) contains 55 (len=5)
+✅ Base: Forward(56) = 7, Inverse(7) contains 56 (len=8)
+✅ Base: Forward(57) = 7, Inverse(7) contains 57 (len=8)
+--- PASS: TestDebugBaseIPRF (0.02s)
+=== RUN   TestDebugDeterministic
+    debug_deterministic_test.go:39: ✅ Forward(47) = 97, Inverse(97) contains 47
+    debug_deterministic_test.go:39: ✅ Forward(74) = 91, Inverse(91) contains 74
+    debug_deterministic_test.go:39: ✅ Forward(75) = 53, Inverse(53) contains 75
+    debug_deterministic_test.go:39: ✅ Forward(83) = 2, Inverse(2) contains 83
+    debug_deterministic_test.go:39: ✅ Forward(95) = 41, Inverse(41) contains 95
+    debug_deterministic_test.go:39: ✅ Forward(97) = 41, Inverse(41) contains 97
+--- PASS: TestDebugDeterministic (0.01s)
+=== RUN   TestDebugEnhancedIPRF
+Base iPRF: Forward(5) = 0, Inverse(0) = 8 preimages
+Enhanced iPRF: Forward(5) = 5, Inverse(5) = 10 preimages
+✅ Original index 5 found in enhanced inverse result
+✅ Enhanced iPRF produces different result from base (PRP layer working)
+--- PASS: TestDebugEnhancedIPRF (0.00s)
+=== RUN   TestDebugPRPIssue
+Testing BASE iPRF (without PRP layer):
+✅ Base: Forward(0) = 0, Inverse(0) contains 0
+✅ Base: Forward(1) = 0, Inverse(0) contains 1
+✅ Base: Forward(2) = 0, Inverse(0) contains 2
+✅ Base: Forward(3) = 0, Inverse(0) contains 3
+✅ Base: Forward(4) = 0, Inverse(0) contains 4
+✅ Base: Forward(5) = 0, Inverse(0) contains 5
+✅ Base: Forward(6) = 1, Inverse(1) contains 6
+✅ Base: Forward(7) = 1, Inverse(1) contains 7
+✅ Base: Forward(8) = 1, Inverse(1) contains 8
+✅ Base: Forward(9) = 1, Inverse(1) contains 9
+
+Testing ENHANCED iPRF (with PRP layer):
+✅ Enhanced: Forward(0) = 92, Inverse(92) contains 0
+✅ Enhanced: Forward(1) = 46, Inverse(46) contains 1
+✅ Enhanced: Forward(2) = 73, Inverse(73) contains 2
+✅ Enhanced: Forward(3) = 10, Inverse(10) contains 3
+✅ Enhanced: Forward(4) = 43, Inverse(43) contains 4
+✅ Enhanced: Forward(5) = 5, Inverse(5) contains 5
+✅ Enhanced: Forward(6) = 86, Inverse(86) contains 6
+✅ Enhanced: Forward(7) = 14, Inverse(14) contains 7
+✅ Enhanced: Forward(8) = 24, Inverse(24) contains 8
+✅ Enhanced: Forward(9) = 9, Inverse(9) contains 9
+
+Testing PRP layer directly:
+✅ PRP: Permute(0) = 921, InversePermute(921) = 0
+✅ PRP: Permute(1) = 479, InversePermute(479) = 1
+✅ PRP: Permute(2) = 754, InversePermute(754) = 2
+✅ PRP: Permute(3) = 96, InversePermute(96) = 3
+✅ PRP: Permute(4) = 438, InversePermute(438) = 4
+✅ PRP: Permute(5) = 43, InversePermute(43) = 5
+✅ PRP: Permute(6) = 868, InversePermute(868) = 6
+✅ PRP: Permute(7) = 150, InversePermute(150) = 7
+✅ PRP: Permute(8) = 229, InversePermute(229) = 8
+✅ PRP: Permute(9) = 83, InversePermute(83) = 9
+--- PASS: TestDebugPRPIssue (0.02s)
+=== RUN   TestDebugSpecificCase
+Testing specific case: index 92
+Forward(92) = 87
+Inverse(87) found 7 preimages
+✅ SUCCESS: Inverse(87) contains original index 92
+--- PASS: TestDebugSpecificCase (0.00s)
+=== RUN   TestDebugInverse
+Forward(5) = 5
+--- PASS: TestDebugInverse (0.00s)
+=== RUN   TestDebugWithTestParams
+Testing with n=1000, m=100, random keys
+✅ Forward(0) = 10, Inverse(10) contains 0
+✅ Forward(1) = 96, Inverse(96) contains 1
+✅ Forward(2) = 13, Inverse(13) contains 2
+✅ Forward(4) = 86, Inverse(86) contains 4
+✅ Forward(6) = 21, Inverse(21) contains 6
+✅ Forward(10) = 59, Inverse(59) contains 10
+✅ Forward(11) = 81, Inverse(81) contains 11
+✅ Forward(12) = 55, Inverse(55) contains 12
+✅ Forward(13) = 63, Inverse(63) contains 13
+--- PASS: TestDebugWithTestParams (0.01s)
+=== RUN   TestEnhancedIPRF
+    demo_main_test.go:36: ✅ Enhanced iPRF: Forward(1234) = 34, Inverse(34) contains 1234
+    demo_main_test.go:42: Enhanced iPRF: Forward(1234) = 34, found 120 preimages
+--- PASS: TestEnhancedIPRF (0.00s)
+=== RUN   TestEnhancedIPRFInverseSpace
+=== RUN   TestEnhancedIPRFInverseSpace/small
+=== RUN   TestEnhancedIPRFInverseSpace/small/preimages_in_original_space
+=== RUN   TestEnhancedIPRFInverseSpace/small/not_in_permuted_space
+=== RUN   TestEnhancedIPRFInverseSpace/small/forward-inverse_round_trip
+=== RUN   TestEnhancedIPRFInverseSpace/medium
+=== RUN   TestEnhancedIPRFInverseSpace/medium/preimages_in_original_space
+=== RUN   TestEnhancedIPRFInverseSpace/medium/not_in_permuted_space
+=== RUN   TestEnhancedIPRFInverseSpace/medium/forward-inverse_round_trip
+=== RUN   TestEnhancedIPRFInverseSpace/large
+=== RUN   TestEnhancedIPRFInverseSpace/large/preimages_in_original_space
+=== RUN   TestEnhancedIPRFInverseSpace/large/not_in_permuted_space
+=== RUN   TestEnhancedIPRFInverseSpace/large/forward-inverse_round_trip
+--- PASS: TestEnhancedIPRFInverseSpace (9.79s)
+    --- PASS: TestEnhancedIPRFInverseSpace/small (0.01s)
+        --- PASS: TestEnhancedIPRFInverseSpace/small/preimages_in_original_space (0.00s)
+        --- PASS: TestEnhancedIPRFInverseSpace/small/not_in_permuted_space (0.00s)
+        --- PASS: TestEnhancedIPRFInverseSpace/small/forward-inverse_round_trip (0.01s)
+    --- PASS: TestEnhancedIPRFInverseSpace/medium (0.80s)
+        --- PASS: TestEnhancedIPRFInverseSpace/medium/preimages_in_original_space (0.07s)
+        --- PASS: TestEnhancedIPRFInverseSpace/medium/not_in_permuted_space (0.00s)
+        --- PASS: TestEnhancedIPRFInverseSpace/medium/forward-inverse_round_trip (0.73s)
+    --- PASS: TestEnhancedIPRFInverseSpace/large (8.98s)
+        --- PASS: TestEnhancedIPRFInverseSpace/large/preimages_in_original_space (0.82s)
+        --- PASS: TestEnhancedIPRFInverseSpace/large/not_in_permuted_space (0.02s)
+        --- PASS: TestEnhancedIPRFInverseSpace/large/forward-inverse_round_trip (8.15s)
+=== RUN   TestEnhancedIPRFComposition
+=== RUN   TestEnhancedIPRFComposition/forward_composition_correctness
+=== RUN   TestEnhancedIPRFComposition/inverse_composition_correctness
+--- PASS: TestEnhancedIPRFComposition (0.01s)
+    --- PASS: TestEnhancedIPRFComposition/forward_composition_correctness (0.00s)
+    --- PASS: TestEnhancedIPRFComposition/inverse_composition_correctness (0.01s)
+=== RUN   TestEnhancedIPRFCorrectness
+=== RUN   TestEnhancedIPRFCorrectness/complete_forward_mapping
+=== RUN   TestEnhancedIPRFCorrectness/inverse_matches_forward
+=== RUN   TestEnhancedIPRFCorrectness/bijection_on_domain
+--- PASS: TestEnhancedIPRFCorrectness (0.15s)
+    --- PASS: TestEnhancedIPRFCorrectness/complete_forward_mapping (0.00s)
+    --- PASS: TestEnhancedIPRFCorrectness/inverse_matches_forward (0.07s)
+    --- PASS: TestEnhancedIPRFCorrectness/bijection_on_domain (0.07s)
+=== RUN   TestInverseVsInverseFixed
+=== RUN   TestInverseVsInverseFixed/implementations_match
+--- PASS: TestInverseVsInverseFixed (0.03s)
+    --- PASS: TestInverseVsInverseFixed/implementations_match (0.03s)
+=== RUN   TestEnhancedIPRFDeterminism
+=== RUN   TestEnhancedIPRFDeterminism/same_keys_produce_same_results
+=== RUN   TestEnhancedIPRFDeterminism/different_keys_produce_different_results
+--- PASS: TestEnhancedIPRFDeterminism (0.01s)
+    --- PASS: TestEnhancedIPRFDeterminism/same_keys_produce_same_results (0.01s)
+    --- PASS: TestEnhancedIPRFDeterminism/different_keys_produce_different_results (0.00s)
+=== RUN   TestEnhancedIPRFEdgeCases
+=== RUN   TestEnhancedIPRFEdgeCases/n=m_case
+=== RUN   TestEnhancedIPRFEdgeCases/m=1_case
+=== RUN   TestEnhancedIPRFEdgeCases/large_m/n_ratio
+--- PASS: TestEnhancedIPRFEdgeCases (0.12s)
+    --- PASS: TestEnhancedIPRFEdgeCases/n=m_case (0.01s)
+    --- PASS: TestEnhancedIPRFEdgeCases/m=1_case (0.00s)
+    --- PASS: TestEnhancedIPRFEdgeCases/large_m/n_ratio (0.11s)
+=== RUN   TestCacheModeEffectiveness
+=== RUN   TestCacheModeEffectiveness/cache_vs_no-cache_performance
+    iprf_integration_test.go:68: No-cache duration: 4.448283791s
+    iprf_integration_test.go:69: Cache duration: 60.708µs
+    iprf_integration_test.go:70: Cache hits: 100, misses: 0
+    iprf_integration_test.go:75: Speedup with cache: 73273.44x
+=== RUN   TestCacheModeEffectiveness/cache_correctness
+--- PASS: TestCacheModeEffectiveness (8.71s)
+    --- PASS: TestCacheModeEffectiveness/cache_vs_no-cache_performance (4.45s)
+    --- PASS: TestCacheModeEffectiveness/cache_correctness (4.27s)
+=== RUN   TestSystemIntegration
+=== RUN   TestSystemIntegration/realistic_scale_forward
+=== RUN   TestSystemIntegration/realistic_scale_inverse
+    iprf_integration_test.go:164: Inverse(0): 8372 preimages in 3.53395025s
+    iprf_integration_test.go:164: Inverse(100): 8342 preimages in 3.529770917s
+    iprf_integration_test.go:164: Inverse(500): 8271 preimages in 3.525509709s
+    iprf_integration_test.go:164: Inverse(1000): 8258 preimages in 3.5546225s
+    iprf_integration_test.go:164: Inverse(1023): 8334 preimages in 3.541804042s
+=== RUN   TestSystemIntegration/expected_preimage_size
+    iprf_integration_test.go:197: GetPreimageSize() = 8204, expected 8203
+    iprf_integration_test.go:200: Expected preimage size: 8204 elements
+--- FAIL: TestSystemIntegration (18.18s)
+    --- PASS: TestSystemIntegration/realistic_scale_forward (0.49s)
+    --- PASS: TestSystemIntegration/realistic_scale_inverse (17.69s)
+    --- FAIL: TestSystemIntegration/expected_preimage_size (0.00s)
+=== RUN   TestMultiQueryScenario
+=== RUN   TestMultiQueryScenario/sequential_queries
+    iprf_integration_test.go:247: Completed 50 queries with cache size 41
+=== RUN   TestMultiQueryScenario/parallel_query_simulation
+--- PASS: TestMultiQueryScenario (0.12s)
+    --- PASS: TestMultiQueryScenario/sequential_queries (0.11s)
+    --- PASS: TestMultiQueryScenario/parallel_query_simulation (0.01s)
+=== RUN   TestBatchOperations
+=== RUN   TestBatchOperations/batch_inverse_correctness
+=== RUN   TestBatchOperations/batch_performance
+    iprf_integration_test.go:328: Batch: 140.399333ms, Sequential: 140.354ms
+--- PASS: TestBatchOperations (0.31s)
+    --- PASS: TestBatchOperations/batch_inverse_correctness (0.03s)
+    --- PASS: TestBatchOperations/batch_performance (0.28s)
+=== RUN   TestDistributionStats
+=== RUN   TestDistributionStats/small_domain_stats
+    iprf_integration_test.go:361: Distribution stats: map[actual_max_preimage:18 actual_median_preimage:10 actual_min_preimage:2 expected_preimage_size:10 total_outputs:100]
+=== RUN   TestDistributionStats/large_domain_stats
+    iprf_integration_test.go:383: Distribution stats: map[expected_preimage_size:100]
+--- PASS: TestDistributionStats (0.00s)
+    --- PASS: TestDistributionStats/small_domain_stats (0.00s)
+    --- PASS: TestDistributionStats/large_domain_stats (0.00s)
+=== RUN   TestErrorConditions
+=== RUN   TestErrorConditions/out_of_range_queries
+=== RUN   TestErrorConditions/boundary_queries
+=== RUN   TestErrorConditions/forward_boundary_values
+--- PASS: TestErrorConditions (0.01s)
+    --- PASS: TestErrorConditions/out_of_range_queries (0.00s)
+    --- PASS: TestErrorConditions/boundary_queries (0.00s)
+    --- PASS: TestErrorConditions/forward_boundary_values (0.00s)
+=== RUN   TestMemoryEfficiency
+=== RUN   TestMemoryEfficiency/preimage_size_reasonable
+--- PASS: TestMemoryEfficiency (4.20s)
+    --- PASS: TestMemoryEfficiency/preimage_size_reasonable (4.20s)
+=== RUN   TestConcurrentAccess
+=== RUN   TestConcurrentAccess/determinism_under_repeated_access
+--- PASS: TestConcurrentAccess (0.29s)
+    --- PASS: TestConcurrentAccess/determinism_under_repeated_access (0.29s)
+=== RUN   TestInversePerformanceComplexity
+=== RUN   TestInversePerformanceComplexity/tiny_n=100
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8 preimages in 97.5µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8 preimages in 97.834µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8 preimages in 103.375µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8 preimages in 97.834µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8 preimages in 97.584µs
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=100: 98.825µs
+=== RUN   TestInversePerformanceComplexity/small_n=1K
+    iprf_performance_benchmark_test.go:59: Inverse(0): 7 preimages in 751.791µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 7 preimages in 762.459µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 7 preimages in 740.583µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 7 preimages in 730.583µs
+    iprf_performance_benchmark_test.go:59: Inverse(0): 7 preimages in 763.208µs
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=1000: 749.724µs
+=== RUN   TestInversePerformanceComplexity/medium_n=10K
+    iprf_performance_benchmark_test.go:59: Inverse(0): 12 preimages in 9.544667ms
+    iprf_performance_benchmark_test.go:59: Inverse(100): 11 preimages in 9.464417ms
+    iprf_performance_benchmark_test.go:59: Inverse(200): 12 preimages in 9.356166ms
+    iprf_performance_benchmark_test.go:59: Inverse(300): 10 preimages in 9.387458ms
+    iprf_performance_benchmark_test.go:59: Inverse(400): 4 preimages in 9.470708ms
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=10000: 9.444683ms
+=== RUN   TestInversePerformanceComplexity/large_n=100K
+    iprf_performance_benchmark_test.go:59: Inverse(0): 99 preimages in 47.568167ms
+    iprf_performance_benchmark_test.go:59: Inverse(100): 98 preimages in 44.613417ms
+    iprf_performance_benchmark_test.go:59: Inverse(200): 93 preimages in 44.427125ms
+    iprf_performance_benchmark_test.go:59: Inverse(300): 93 preimages in 44.948334ms
+    iprf_performance_benchmark_test.go:59: Inverse(400): 104 preimages in 44.32225ms
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=100000: 45.175858ms
+=== RUN   TestInversePerformanceComplexity/realistic_n=1M
+    iprf_performance_benchmark_test.go:59: Inverse(0): 993 preimages in 475.212833ms
+    iprf_performance_benchmark_test.go:59: Inverse(100): 957 preimages in 419.475083ms
+    iprf_performance_benchmark_test.go:59: Inverse(200): 971 preimages in 414.832ms
+    iprf_performance_benchmark_test.go:59: Inverse(300): 979 preimages in 416.862375ms
+    iprf_performance_benchmark_test.go:59: Inverse(400): 991 preimages in 415.438083ms
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=1000000: 428.364074ms
+=== RUN   TestInversePerformanceComplexity/full_scale_n=8.4M
+    iprf_performance_benchmark_test.go:59: Inverse(0): 8372 preimages in 4.231444292s
+    iprf_performance_benchmark_test.go:59: Inverse(100): 8342 preimages in 3.529393459s
+    iprf_performance_benchmark_test.go:59: Inverse(200): 8172 preimages in 3.532856792s
+    iprf_performance_benchmark_test.go:59: Inverse(300): 8112 preimages in 3.538474084s
+    iprf_performance_benchmark_test.go:59: Inverse(400): 8203 preimages in 3.545524542s
+    iprf_performance_benchmark_test.go:83: Average inverse time for n=8400000: 3.675538633s
+--- PASS: TestInversePerformanceComplexity (20.80s)
+    --- PASS: TestInversePerformanceComplexity/tiny_n=100 (0.00s)
+    --- PASS: TestInversePerformanceComplexity/small_n=1K (0.00s)
+    --- PASS: TestInversePerformanceComplexity/medium_n=10K (0.05s)
+    --- PASS: TestInversePerformanceComplexity/large_n=100K (0.23s)
+    --- PASS: TestInversePerformanceComplexity/realistic_n=1M (2.14s)
+    --- PASS: TestInversePerformanceComplexity/full_scale_n=8.4M (18.38s)
+=== RUN   TestPerformanceScaling
+    iprf_performance_benchmark_test.go:122: n=1000: average inverse time = 708.054µs
+    iprf_performance_benchmark_test.go:122: n=10000: average inverse time = 9.105087ms
+    iprf_performance_benchmark_test.go:122: n=100000: average inverse time = 111.16375ms
+    iprf_performance_benchmark_test.go:133: Size ratio 10.0x → Time ratio 12.86x
+    iprf_performance_benchmark_test.go:138: Performance scaling is linear or worse: size 10.0x → time 12.86x
+    iprf_performance_benchmark_test.go:140: This indicates Bug 3: O(n) inverse complexity
+    iprf_performance_benchmark_test.go:146: Warning: Time scaling (12.86x) higher than expected (1.50x)
+    iprf_performance_benchmark_test.go:133: Size ratio 10.0x → Time ratio 12.21x
+    iprf_performance_benchmark_test.go:138: Performance scaling is linear or worse: size 10.0x → time 12.21x
+    iprf_performance_benchmark_test.go:140: This indicates Bug 3: O(n) inverse complexity
+    iprf_performance_benchmark_test.go:146: Warning: Time scaling (12.21x) higher than expected (1.50x)
+--- FAIL: TestPerformanceScaling (1.21s)
+=== RUN   TestPRPInversePerformance
+=== RUN   TestPRPInversePerformance/small_n=1K
+    iprf_performance_benchmark_test.go:193: n=1000: average PRP inverse time = 3.179µs
+=== RUN   TestPRPInversePerformance/medium_n=10K
+    iprf_performance_benchmark_test.go:193: n=10000: average PRP inverse time = 49.8µs
+=== RUN   TestPRPInversePerformance/large_n=100K
+    iprf_performance_benchmark_test.go:193: n=100000: average PRP inverse time = 333.745µs
+=== RUN   TestPRPInversePerformance/realistic_n=1M
+    iprf_performance_benchmark_test.go:193: n=1000000: average PRP inverse time = 3.479016ms
+--- PASS: TestPRPInversePerformance (0.04s)
+    --- PASS: TestPRPInversePerformance/small_n=1K (0.00s)
+    --- PASS: TestPRPInversePerformance/medium_n=10K (0.00s)
+    --- PASS: TestPRPInversePerformance/large_n=100K (0.00s)
+    --- PASS: TestPRPInversePerformance/realistic_n=1M (0.03s)
+=== RUN   TestForwardPerformanceRealistic
+=== RUN   TestForwardPerformanceRealistic/forward_latency
+    iprf_performance_benchmark_test.go:320: Average forward latency: 522.695µs
+    iprf_performance_benchmark_test.go:324: Forward too slow: 522.695µs (expected < 100µs)
+=== RUN   TestForwardPerformanceRealistic/forward_throughput
+    iprf_performance_benchmark_test.go:341: Forward throughput: 1819685 ops/sec
+--- FAIL: TestForwardPerformanceRealistic (0.53s)
+    --- FAIL: TestForwardPerformanceRealistic/forward_latency (0.52s)
+    --- PASS: TestForwardPerformanceRealistic/forward_throughput (0.01s)
+=== RUN   TestInversePerformanceRealistic
+=== RUN   TestInversePerformanceRealistic/inverse_latency
+    iprf_performance_benchmark_test.go:379: Inverse(0): 8372 preimages in 4.235726834s
+    iprf_performance_benchmark_test.go:379: Inverse(100): 8342 preimages in 3.531776167s
+    iprf_performance_benchmark_test.go:379: Inverse(200): 8172 preimages in 3.523053833s
+    iprf_performance_benchmark_test.go:379: Inverse(300): 8112 preimages in 3.537334042s
+    iprf_performance_benchmark_test.go:379: Inverse(400): 8203 preimages in 3.543650583s
+    iprf_performance_benchmark_test.go:379: Inverse(500): 8271 preimages in 3.535101958s
+    iprf_performance_benchmark_test.go:379: Inverse(600): 8088 preimages in 3.539475959s
+    iprf_performance_benchmark_test.go:379: Inverse(700): 8163 preimages in 3.538053584s
+    iprf_performance_benchmark_test.go:379: Inverse(800): 8212 preimages in 3.540160291s
+    iprf_performance_benchmark_test.go:379: Inverse(900): 8206 preimages in 3.521701083s
+    iprf_performance_benchmark_test.go:401: Average inverse latency for n=8400000: 3.604603433s
+--- PASS: TestInversePerformanceRealistic (36.05s)
+    --- PASS: TestInversePerformanceRealistic/inverse_latency (36.05s)
+=== RUN   TestMemoryUsageProfile
+=== RUN   TestMemoryUsageProfile/n=1000
+    iprf_performance_benchmark_test.go:436: n=1000: preimage size=7, estimated memory=56 bytes
+=== RUN   TestMemoryUsageProfile/n=10000
+    iprf_performance_benchmark_test.go:436: n=10000: preimage size=12, estimated memory=96 bytes
+=== RUN   TestMemoryUsageProfile/n=100000
+    iprf_performance_benchmark_test.go:436: n=100000: preimage size=99, estimated memory=792 bytes
+=== RUN   TestMemoryUsageProfile/n=1000000
+    iprf_performance_benchmark_test.go:436: n=1000000: preimage size=993, estimated memory=7944 bytes
+--- PASS: TestMemoryUsageProfile (0.53s)
+    --- PASS: TestMemoryUsageProfile/n=1000 (0.00s)
+    --- PASS: TestMemoryUsageProfile/n=10000 (0.01s)
+    --- PASS: TestMemoryUsageProfile/n=100000 (0.05s)
+    --- PASS: TestMemoryUsageProfile/n=1000000 (0.47s)
+=== RUN   TestWorstCasePerformance
+=== RUN   TestWorstCasePerformance/smallest_range_m=1
+    iprf_performance_benchmark_test.go:466: Worst case (m=1): 10000 preimages in 1.010042ms
+=== RUN   TestWorstCasePerformance/highly_skewed_distribution
+    iprf_performance_benchmark_test.go:495: Inverse(0): 10024 preimages in 18.207292ms
+    iprf_performance_benchmark_test.go:495: Inverse(1): 9871 preimages in 15.127167ms
+    iprf_performance_benchmark_test.go:495: Inverse(2): 10014 preimages in 14.952125ms
+    iprf_performance_benchmark_test.go:495: Inverse(3): 9962 preimages in 14.937667ms
+    iprf_performance_benchmark_test.go:495: Inverse(4): 10078 preimages in 14.9625ms
+    iprf_performance_benchmark_test.go:495: Inverse(5): 10031 preimages in 15.250917ms
+    iprf_performance_benchmark_test.go:495: Inverse(6): 9984 preimages in 14.943209ms
+    iprf_performance_benchmark_test.go:495: Inverse(7): 10098 preimages in 14.818958ms
+    iprf_performance_benchmark_test.go:495: Inverse(8): 10023 preimages in 15.019917ms
+    iprf_performance_benchmark_test.go:495: Inverse(9): 9915 preimages in 15.349958ms
+    iprf_performance_benchmark_test.go:498: Max inverse time with skewed distribution: 18.207292ms
+--- PASS: TestWorstCasePerformance (0.15s)
+    --- PASS: TestWorstCasePerformance/smallest_range_m=1 (0.00s)
+    --- PASS: TestWorstCasePerformance/highly_skewed_distribution (0.15s)
+=== RUN   TestPMNSCorrectness
+=== RUN   TestPMNSCorrectness/small_equal
+=== RUN   TestPMNSCorrectness/small_equal/forward-inverse_round_trip
+=== RUN   TestPMNSCorrectness/small_equal/no_element_in_wrong_bin
+=== RUN   TestPMNSCorrectness/small_equal/total_coverage
+=== RUN   TestPMNSCorrectness/medium_skewed
+=== RUN   TestPMNSCorrectness/medium_skewed/forward-inverse_round_trip
+=== RUN   TestPMNSCorrectness/medium_skewed/no_element_in_wrong_bin
+=== RUN   TestPMNSCorrectness/medium_skewed/total_coverage
+=== RUN   TestPMNSCorrectness/large_skewed
+=== RUN   TestPMNSCorrectness/large_skewed/forward-inverse_round_trip
+=== RUN   TestPMNSCorrectness/large_skewed/no_element_in_wrong_bin
+=== RUN   TestPMNSCorrectness/large_skewed/total_coverage
+=== RUN   TestPMNSCorrectness/realistic_scale
+=== RUN   TestPMNSCorrectness/realistic_scale/forward-inverse_round_trip
+=== RUN   TestPMNSCorrectness/realistic_scale/no_element_in_wrong_bin
+=== RUN   TestPMNSCorrectness/realistic_scale/total_coverage
+--- PASS: TestPMNSCorrectness (97.71s)
+    --- PASS: TestPMNSCorrectness/small_equal (0.01s)
+        --- PASS: TestPMNSCorrectness/small_equal/forward-inverse_round_trip (0.01s)
+        --- PASS: TestPMNSCorrectness/small_equal/no_element_in_wrong_bin (0.00s)
+        --- PASS: TestPMNSCorrectness/small_equal/total_coverage (0.00s)
+    --- PASS: TestPMNSCorrectness/medium_skewed (0.85s)
+        --- PASS: TestPMNSCorrectness/medium_skewed/forward-inverse_round_trip (0.71s)
+        --- PASS: TestPMNSCorrectness/medium_skewed/no_element_in_wrong_bin (0.07s)
+        --- PASS: TestPMNSCorrectness/medium_skewed/total_coverage (0.07s)
+    --- PASS: TestPMNSCorrectness/large_skewed (3.48s)
+        --- PASS: TestPMNSCorrectness/large_skewed/forward-inverse_round_trip (2.90s)
+        --- PASS: TestPMNSCorrectness/large_skewed/no_element_in_wrong_bin (0.29s)
+        --- PASS: TestPMNSCorrectness/large_skewed/total_coverage (0.29s)
+    --- PASS: TestPMNSCorrectness/realistic_scale (93.36s)
+        --- PASS: TestPMNSCorrectness/realistic_scale/forward-inverse_round_trip (43.97s)
+        --- PASS: TestPMNSCorrectness/realistic_scale/no_element_in_wrong_bin (4.40s)
+        --- PASS: TestPMNSCorrectness/realistic_scale/total_coverage (45.00s)
+=== RUN   TestNodeEncodingUniqueness
+=== RUN   TestNodeEncodingUniqueness/determinism
+=== RUN   TestNodeEncodingUniqueness/no_collisions_small_values
+=== RUN   TestNodeEncodingUniqueness/no_collisions_large_values
+=== RUN   TestNodeEncodingUniqueness/encoding_properties
+=== RUN   TestNodeEncodingUniqueness/collision_probability_estimate
+--- PASS: TestNodeEncodingUniqueness (0.00s)
+    --- PASS: TestNodeEncodingUniqueness/determinism (0.00s)
+    --- PASS: TestNodeEncodingUniqueness/no_collisions_small_values (0.00s)
+    --- PASS: TestNodeEncodingUniqueness/no_collisions_large_values (0.00s)
+    --- PASS: TestNodeEncodingUniqueness/encoding_properties (0.00s)
+    --- PASS: TestNodeEncodingUniqueness/collision_probability_estimate (0.00s)
+=== RUN   TestBinCollectionComplete
+=== RUN   TestBinCollectionComplete/small
+=== RUN   TestBinCollectionComplete/small/compare_against_brute_force
+=== RUN   TestBinCollectionComplete/small/no_duplicate_elements
+=== RUN   TestBinCollectionComplete/small/all_elements_covered
+=== RUN   TestBinCollectionComplete/medium
+=== RUN   TestBinCollectionComplete/medium/compare_against_brute_force
+=== RUN   TestBinCollectionComplete/medium/no_duplicate_elements
+=== RUN   TestBinCollectionComplete/medium/all_elements_covered
+=== RUN   TestBinCollectionComplete/large
+=== RUN   TestBinCollectionComplete/large/compare_against_brute_force
+=== RUN   TestBinCollectionComplete/large/no_duplicate_elements
+=== RUN   TestBinCollectionComplete/large/all_elements_covered
+--- PASS: TestBinCollectionComplete (0.01s)
+    --- PASS: TestBinCollectionComplete/small (0.00s)
+        --- PASS: TestBinCollectionComplete/small/compare_against_brute_force (0.00s)
+        --- PASS: TestBinCollectionComplete/small/no_duplicate_elements (0.00s)
+        --- PASS: TestBinCollectionComplete/small/all_elements_covered (0.00s)
+    --- PASS: TestBinCollectionComplete/medium (0.00s)
+        --- PASS: TestBinCollectionComplete/medium/compare_against_brute_force (0.00s)
+        --- PASS: TestBinCollectionComplete/medium/no_duplicate_elements (0.00s)
+        --- PASS: TestBinCollectionComplete/medium/all_elements_covered (0.00s)
+    --- PASS: TestBinCollectionComplete/large (0.01s)
+        --- PASS: TestBinCollectionComplete/large/compare_against_brute_force (0.01s)
+        --- PASS: TestBinCollectionComplete/large/no_duplicate_elements (0.00s)
+        --- PASS: TestBinCollectionComplete/large/all_elements_covered (0.00s)
+=== RUN   TestPMNSDistribution
+=== RUN   TestPMNSDistribution/binomial_distribution_shape
+    iprf_pmns_test.go:461: Distribution: mean=100.00 (expected=100.00), stddev=10.29
+    iprf_pmns_test.go:475: Stddev: actual=10.29, expected~0.99
+=== RUN   TestPMNSDistribution/chi-squared_test
+    iprf_pmns_test.go:506: Chi-squared: 105.80 (df=99, z-score=0.48)
+=== RUN   TestPMNSDistribution/no_empty_bins
+--- PASS: TestPMNSDistribution (0.01s)
+    --- PASS: TestPMNSDistribution/binomial_distribution_shape (0.00s)
+    --- PASS: TestPMNSDistribution/chi-squared_test (0.00s)
+    --- PASS: TestPMNSDistribution/no_empty_bins (0.00s)
+=== RUN   TestPMNSTreeStructure
+=== RUN   TestPMNSTreeStructure/tree_depth_correct
+=== RUN   TestPMNSTreeStructure/binary_splits_are_consistent
+    iprf_pmns_test.go:566: Root split: left=515, right=485, total=1000
+--- PASS: TestPMNSTreeStructure (0.00s)
+    --- PASS: TestPMNSTreeStructure/tree_depth_correct (0.00s)
+    --- PASS: TestPMNSTreeStructure/binary_splits_are_consistent (0.00s)
+=== RUN   TestBinomialInverseCDF
+=== RUN   TestBinomialInverseCDF/edge_cases
+    iprf_pmns_test.go:596: binomialInverseCDF(n=100, p=0.5, u=1) = 89, expected 100
+=== RUN   TestBinomialInverseCDF/monotonicity
+=== RUN   TestBinomialInverseCDF/range_bounds
+--- FAIL: TestBinomialInverseCDF (0.00s)
+    --- FAIL: TestBinomialInverseCDF/edge_cases (0.00s)
+    --- PASS: TestBinomialInverseCDF/monotonicity (0.00s)
+    --- PASS: TestBinomialInverseCDF/range_bounds (0.00s)
+=== RUN   TestPRPBijection
+=== RUN   TestPRPBijection/tiny_domain
+=== RUN   TestPRPBijection/tiny_domain/inverse_property
+=== RUN   TestPRPBijection/tiny_domain/no_collisions
+=== RUN   TestPRPBijection/tiny_domain/surjection
+=== RUN   TestPRPBijection/tiny_domain/determinism
+=== RUN   TestPRPBijection/small_domain
+=== RUN   TestPRPBijection/small_domain/inverse_property
+=== RUN   TestPRPBijection/small_domain/no_collisions
+=== RUN   TestPRPBijection/small_domain/surjection
+=== RUN   TestPRPBijection/small_domain/determinism
+=== RUN   TestPRPBijection/medium_domain
+=== RUN   TestPRPBijection/medium_domain/inverse_property
+=== RUN   TestPRPBijection/medium_domain/no_collisions
+=== RUN   TestPRPBijection/medium_domain/surjection
+=== RUN   TestPRPBijection/medium_domain/determinism
+=== RUN   TestPRPBijection/large_domain
+=== RUN   TestPRPBijection/large_domain/inverse_property
+=== RUN   TestPRPBijection/large_domain/no_collisions
+=== RUN   TestPRPBijection/large_domain/surjection
+=== RUN   TestPRPBijection/large_domain/determinism
+--- PASS: TestPRPBijection (0.00s)
+    --- PASS: TestPRPBijection/tiny_domain (0.00s)
+        --- PASS: TestPRPBijection/tiny_domain/inverse_property (0.00s)
+        --- PASS: TestPRPBijection/tiny_domain/no_collisions (0.00s)
+        --- PASS: TestPRPBijection/tiny_domain/surjection (0.00s)
+        --- PASS: TestPRPBijection/tiny_domain/determinism (0.00s)
+    --- PASS: TestPRPBijection/small_domain (0.00s)
+        --- PASS: TestPRPBijection/small_domain/inverse_property (0.00s)
+        --- PASS: TestPRPBijection/small_domain/no_collisions (0.00s)
+        --- PASS: TestPRPBijection/small_domain/surjection (0.00s)
+        --- PASS: TestPRPBijection/small_domain/determinism (0.00s)
+    --- PASS: TestPRPBijection/medium_domain (0.00s)
+        --- PASS: TestPRPBijection/medium_domain/inverse_property (0.00s)
+        --- PASS: TestPRPBijection/medium_domain/no_collisions (0.00s)
+        --- PASS: TestPRPBijection/medium_domain/surjection (0.00s)
+        --- PASS: TestPRPBijection/medium_domain/determinism (0.00s)
+    --- PASS: TestPRPBijection/large_domain (0.00s)
+        --- PASS: TestPRPBijection/large_domain/inverse_property (0.00s)
+        --- PASS: TestPRPBijection/large_domain/no_collisions (0.00s)
+        --- PASS: TestPRPBijection/large_domain/surjection (0.00s)
+        --- PASS: TestPRPBijection/large_domain/determinism (0.00s)
+=== RUN   TestPRPInverseCorrectness
+=== RUN   TestPRPInverseCorrectness/inverse_finds_correct_preimage
+=== RUN   TestPRPInverseCorrectness/distinguishes_zero_from_not-found
+--- PASS: TestPRPInverseCorrectness (0.00s)
+    --- PASS: TestPRPInverseCorrectness/inverse_finds_correct_preimage (0.00s)
+    --- PASS: TestPRPInverseCorrectness/distinguishes_zero_from_not-found (0.00s)
+=== RUN   TestPRPPerformanceReasonable
+=== RUN   TestPRPPerformanceReasonable/small_n=1K
+    iprf_prp_test.go:190: PRP inverse completed for n=1000
+=== RUN   TestPRPPerformanceReasonable/medium_n=10K
+    iprf_prp_test.go:190: PRP inverse completed for n=10000
+=== RUN   TestPRPPerformanceReasonable/large_n=100K
+    iprf_prp_test.go:190: PRP inverse completed for n=100000
+=== RUN   TestPRPPerformanceReasonable/realistic_n=8.4M
+    iprf_prp_test.go:190: PRP inverse completed for n=8400000
+--- PASS: TestPRPPerformanceReasonable (0.50s)
+    --- PASS: TestPRPPerformanceReasonable/small_n=1K (0.00s)
+    --- PASS: TestPRPPerformanceReasonable/medium_n=10K (0.00s)
+    --- PASS: TestPRPPerformanceReasonable/large_n=100K (0.00s)
+    --- PASS: TestPRPPerformanceReasonable/realistic_n=8.4M (0.49s)
+=== RUN   TestGetDistributionStatsEmptyHandling
+=== RUN   TestGetDistributionStatsEmptyHandling/empty_domain
+=== RUN   TestGetDistributionStatsEmptyHandling/no_preimages_for_output
+=== RUN   TestGetDistributionStatsEmptyHandling/range_larger_than_domain
+--- PASS: TestGetDistributionStatsEmptyHandling (0.00s)
+    --- PASS: TestGetDistributionStatsEmptyHandling/empty_domain (0.00s)
+    --- PASS: TestGetDistributionStatsEmptyHandling/no_preimages_for_output (0.00s)
+    --- PASS: TestGetDistributionStatsEmptyHandling/range_larger_than_domain (0.00s)
+=== RUN   TestPRPEdgeCases
+=== RUN   TestPRPEdgeCases/n=1_domain
+=== RUN   TestPRPEdgeCases/n=2_domain
+=== RUN   TestPRPEdgeCases/power_of_2_domains
+--- PASS: TestPRPEdgeCases (0.00s)
+    --- PASS: TestPRPEdgeCases/n=1_domain (0.00s)
+    --- PASS: TestPRPEdgeCases/n=2_domain (0.00s)
+    --- PASS: TestPRPEdgeCases/power_of_2_domains (0.00s)
+=== RUN   TestPRPConsistencyAcrossDomains
+=== RUN   TestPRPConsistencyAcrossDomains/different_keys_produce_different_permutations
+=== RUN   TestPRPConsistencyAcrossDomains/same_key_same_domain_is_deterministic
+--- PASS: TestPRPConsistencyAcrossDomains (0.00s)
+    --- PASS: TestPRPConsistencyAcrossDomains/different_keys_produce_different_permutations (0.00s)
+    --- PASS: TestPRPConsistencyAcrossDomains/same_key_same_domain_is_deterministic (0.00s)
+=== RUN   TestPRPSecurityProperties
+=== RUN   TestPRPSecurityProperties/avalanche_effect
+=== RUN   TestPRPSecurityProperties/uniform_distribution
+--- PASS: TestPRPSecurityProperties (0.00s)
+    --- PASS: TestPRPSecurityProperties/avalanche_effect (0.00s)
+    --- PASS: TestPRPSecurityProperties/uniform_distribution (0.00s)
+=== RUN   TestIPRFForwardBackward
+--- PASS: TestIPRFForwardBackward (0.07s)
+=== RUN   TestIPRFDistribution
+--- PASS: TestIPRFDistribution (0.00s)
+=== RUN   TestIPRFInverseCorrectness
+--- PASS: TestIPRFInverseCorrectness (0.03s)
+=== RUN   TestIPRFDeterminism
+--- PASS: TestIPRFDeterminism (0.14s)
+=== RUN   TestPRPPermutation
+--- PASS: TestPRPPermutation (0.00s)
+=== RUN   TestPerformance
+=== RUN   TestPerformance/Forward
+    iprf_test.go:247: Forward: 486.162µs per operation
+    iprf_test.go:251: Forward too slow: 486.162µs (expected microseconds)
+=== RUN   TestPerformance/Inverse
