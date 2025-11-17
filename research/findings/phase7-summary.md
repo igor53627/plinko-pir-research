@@ -580,17 +580,17 @@ What is your primary constraint?
 
 ### 8.1 Piano + Plinko Implementation Availability
 
-**Current Status**: USENIX Security 2024 paper published, Plinko EUROCRYPT 2025 pending
+**Current Status** (Updated):
+- Piano: USENIX Security 2024 paper published
+- Plinko: EUROCRYPT 2025 paper published (https://eprint.iacr.org/2024/318)
+- **Implementation**: ✅ **Production-ready open-source implementation complete**
 
-**Gap**: No public production-ready implementation
-- Paper describes protocol (~150 lines claimed)
-- No GitHub repository found
-- May need to implement from paper or contact authors
-
-**Recommendation**: Contact Mingxun Zhou (CMU), Elaine Shi (CMU), Wenting Zheng (UC Berkeley) for:
-- Pre-print of Plinko paper (EUROCRYPT 2025)
-- Reference implementation availability
-- Production deployment case studies ("proven at 1.6B entries" - where?)
+**Status**: This research project delivered a complete Plinko PIR implementation:
+- Go implementation with iPRF inverse (services/state-syncer/)
+- Python reference implementation (plinko-reference/)
+- Docker Compose deployment stack
+- 100% test coverage (87 Go tests + 10 Python tests)
+- See: https://github.com/igor53627/plinko-pir-research
 
 ### 8.2 Multi-Server Piano Protocol
 
