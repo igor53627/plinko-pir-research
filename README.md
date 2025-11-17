@@ -63,14 +63,14 @@ open http://localhost:5173
 ## Performance
 
 **iPRF Inverse (Production):**
-- Domain size: 8.4M accounts
+- Domain size: 5.6M accounts
 - Range size: 1024 bins
 - Inverse time: **60µs** (O(log m + k))
 - Speedup: **1046× faster** than brute force
 
 **TablePRP:**
 - Forward/Inverse: **O(1)** with 0.54ns per operation
-- Memory: 16 bytes per element (~134MB for 8.4M)
+- Memory: 16 bytes per element (~90MB for 5.6M)
 
 **Plinko Update Performance:**
 ```
@@ -157,14 +157,6 @@ Implementation based on:
 
 Paper included: [`docs/research/plinko-pir-paper.pdf`](docs/research/plinko-pir-paper.pdf)
 
-## Project Status
-
-✅ **Production Ready**
-- All 15 critical bugs fixed
-- 100% test coverage (87 Go tests, 10 Python tests)
-- Performance validated (1046× speedup achieved)
-- Security audited (zero vulnerabilities)
-
 ## Deployment
 
 Plinko PIR ships as a Docker Compose reference stack:
@@ -246,33 +238,6 @@ Combines three storage tiers:
 - Private query execution
 - Export to tax software
 
-## Benchmarks
-
-### Comparison: Plinko vs Alternatives
-
-| Approach | Privacy | Cost/User | Latency | Bandwidth |
-|----------|---------|-----------|---------|-----------|
-| **Direct RPC** | ❌ None | Free | 50ms | Minimal |
-| **Full Node** | ✅ Perfect | $100-300/mo | <1ms | 1+ TB sync |
-| **VPN + RPC** | ⚠️ IP only | $5-10/mo | 100ms | Minimal |
-| **Plinko PIR** | ✅ Perfect | **$0.09-0.14/mo** | **5ms** | **70 MB snapshot** |
-
-**Plinko PIR**: Best privacy-cost-performance balance
-
-### Scaling Analysis
-
-```
-10,000 users:
-  - Server cost: $915-1,365/month
-  - Per-user: $0.09-0.14/month
-  - CDN bandwidth: FREE (CloudFlare R2)
-
-100,000 users:
-  - Server cost: $2,000-3,000/month
-  - Per-user: $0.02-0.03/month
-  - Economies of scale kick in
-```
-
 ## Development
 
 For detailed development instructions, see [DEVELOPMENT.md](DEVELOPMENT.md).
@@ -306,25 +271,9 @@ make logs
 make stop
 ```
 
-## Contributing
-
-This is a research project demonstrating Plinko PIR feasibility for Ethereum. Contributions welcome:
-
-- **Research**: Extend to other RPC methods (eth_getTransactionReceipt, etc.)
-- **Optimization**: Improve database compression, query latency
-- **Integration**: Build MetaMask/Rabby plugins
-- **Testing**: Benchmark at larger scales (100M+ accounts)
-
 ## License
 
 MIT License - see [LICENSE](LICENSE) file
-
-## Acknowledgments
-
-- **Plinko PIR Authors**: Alex Davidson, Gal Yona, Boel Nelson (EUROCRYPT 2025 paper)
-- **SimplePIR Team**: Alexandra Henzinger, Matthew M. Hong, Henry Corrigan-Gibbs, Sarah Meiklejohn, Vinod Vaikuntanathan
-- **Brave Research**: For pioneering practical PIR
-- **Ethereum Foundation**: For the blockchain infrastructure
 
 ## Contact & Links
 
