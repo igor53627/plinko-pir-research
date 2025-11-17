@@ -7,11 +7,10 @@
 Plinko is a single-server Private Information Retrieval (PIR) protocol with efficient updates. This implementation provides a production-ready system for private blockchain state queries.
 
 **Key Features:**
-- 🔒 **Privacy-Preserving**: Query blockchain state without revealing query contents
-- ⚡ **High Performance**: O(log m + k) query complexity with iPRF inverse
-- 🔄 **Efficient Updates**: Incremental state updates without full reconstruction
-- 🎯 **Production-Ready**: Comprehensive test coverage, deployment guides
-- 🐍 **Multi-Language**: Go (production) and Python (reference) implementations
+- **Privacy-Preserving**: Query blockchain state without revealing query contents
+- **High Performance**: O(log m + k) query complexity with iPRF inverse
+- **Efficient Updates**: Incremental state updates without full reconstruction
+- **Multi-Language**: Go (production) and Python (reference) implementations
 
 ## Quick Start
 
