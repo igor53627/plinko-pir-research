@@ -1,0 +1,31 @@
+# Lychee link checker ignore patterns
+
+# Local development URLs
+http://localhost*
+http://127.0.0.1*
+https://localhost*
+https://127.0.0.1*
+
+# Example/placeholder URLs
+example.com
+example.org
+
+# Social media (rate-limited)
+twitter.com/*
+x.com/*
+
+# Registry endpoints (may be rate-limited)
+registry.npmjs.org
+
+# IPFS gateways (transient)
+ipfs.io/*
+gateway.ipfs.io/*
+
+# Private/authenticated endpoints
+*.private
+*.internal
+
+# Temporary/placeholder links
+TODO
+TBD
+FIXME

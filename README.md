@@ -192,7 +192,7 @@ python3 scripts/build_database_from_parquet.py --input raw_balances --output dat
 
 ### 2. Smart Event Log Compression
 
-[Template-based compression](research/findings/fixed-size-log-compression.md) reduces logs to fixed 256-byte entries:
+[Template-based compression](research/archive/fixed-size-log-compression.md) reduces logs to fixed 256-byte entries:
 - 85% coverage with 50 event templates
 - ERC20/721 transfers, Uniswap swaps, DeFi events
 - 8× database size reduction
