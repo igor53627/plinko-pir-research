@@ -109,13 +109,11 @@ python3 test_iprf_simple.py
 | Research Area | Finding | Status |
 |---------------|---------|--------|
 | **eth_getBalance** | ✅ **VIABLE** - 5.6M recent addresses, ~5 ms queries | PoC Implemented |
-| **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase-4-eth-call-analysis.md) |
-| **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
-| **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase-5-eth-logs-analysis.md) |
-| **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/findings/eth-logs-50k-blocks.md) |
-| **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/findings/fixed-size-log-compression.md) |
-
-**External Summary**: [Plinko PIR Analysis](https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7)
+| **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase7-summary.md) |
+| **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/archive/fixed-size-log-compression.md) |
+| **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/archive/fixed-size-log-compression.md) |
 
 ### Balance Queries (eth_getBalance)
 
