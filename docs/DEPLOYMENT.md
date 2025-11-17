@@ -80,8 +80,11 @@ All commands derive the target IP via the Vultr API (`instances?tag=$VULTR_TAG`)
 2. Watch `./scripts/vultr-deploy.sh logs` for healthy startup (state-syncer should announce snapshot/metrics endpoints).
 3. Verify CDN endpoints via:
    ```bash
-   curl http://45.76.8.100:8080/health
-   curl http://45.76.8.100:8080/ipfs/<latest-cid>
+   # Get your instance IP
+   VULTR_IP=$(./scripts/vultr-deploy.sh info | grep "IP:" | awk '{print $2}')
+
+   curl http://${VULTR_IP}:8080/health
+   curl http://${VULTR_IP}:8080/ipfs/<latest-cid>
    ```
 
 ## 6. Pinning Provider Overrides

@@ -131,6 +131,8 @@ Configuration:
   - Update latency: 23.75ms per 2,000 accounts (Plinko cache mode)
 ```
 
+> **Note**: The PoC/development environment (see IMPLEMENTATION.md) uses 8.4M simulated accounts via Anvil for scalability testing, while production deployment uses 5.6M real mainnet addresses.
+
 **Use Cases:**
 - Privacy-focused wallets (MetaMask alternative)
 - DeFi portfolio trackers

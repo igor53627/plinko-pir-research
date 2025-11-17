@@ -4,6 +4,12 @@
 
 This PoC demonstrates how Plinko PIR (single-server private information retrieval) combined with Plinko (incremental update system) can provide information-theoretic privacy for blockchain queries at Ethereum Warm Tier scale (8.4M accounts).
 
+> **Note on Database Sizes:**
+> - **PoC/Development (this document)**: 8.4M simulated accounts using Anvil (eth-mock service)
+> - **Production (see README.md)**: 5.6M real addresses from Ethereum mainnet via Hypersync (last 100K blocks)
+>
+> The PoC uses a larger simulated dataset (8.4M = 2^23) to demonstrate scalability, while production deployment uses actual Ethereum data (5,575,868 addresses with non-zero balances).
+
 ## Quick Start
 
 ### Prerequisites
