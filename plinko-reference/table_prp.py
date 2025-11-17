@@ -1,11 +1,13 @@
 """
-BUG #3 FIX: Table-based PRP with O(1) forward and inverse operations.
+Table-based Pseudorandom Permutation with O(1) forward and inverse operations.
 
-Previous approach used cycle walking which had O(n) inverse complexity
-and bijection failures. This implementation uses Fisher-Yates shuffle
-with pre-computed tables for guaranteed O(1) lookups.
+Implements a perfect bijection using Fisher-Yates shuffle with pre-computed
+lookup tables. This provides the permutation component needed for full iPRF
+construction as described in the Plinko paper.
 
-Memory footprint: 16 bytes per element (2 * 8 bytes for uint64 tables)
+Algorithm: Deterministic Fisher-Yates shuffle seeded by cryptographic PRF
+Complexity: O(n) initialization, O(1) forward/inverse queries
+Memory: 16 bytes per element (2 * 8 bytes for uint64 tables)
 For n=8,400,000: ~134 MB total (67 MB forward + 67 MB inverse)
 """
 
@@ -102,7 +104,8 @@ class TablePRP:
         """
         Apply inverse PRP: x = P^-1(y).
 
-        BUG #3 FIX: O(1) lookup vs O(n) cycle walking or brute force.
+        Achieves O(1) complexity via pre-computed inverse table lookup.
+        Guarantees exact inverse due to perfect bijection property.
 
         Complexity: O(1) - single dictionary lookup
 

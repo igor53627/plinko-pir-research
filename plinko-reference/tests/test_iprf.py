@@ -1,12 +1,12 @@
 """
 TDD Test Suite for iPRF Implementation
 
-Tests verify all bug fixes are correctly implemented:
-- Bug #1: Tree-based inverse performance
-- Bug #2: Inverse space correctness
-- Bug #6: Deterministic key derivation
-- Bug #7: Node encoding collision-free
-- Bug #8/10: Parameter separation
+Tests verify correctness of iPRF construction per Plinko paper:
+- Tree-based inverse: O(log m + k) complexity (Theorem 4.4)
+- Inverse correctness: Proper preimage enumeration
+- Deterministic key derivation: PRF-based key hierarchy (Section 5.2)
+- Node encoding: Collision-free identifiers via SHA-256
+- Parameter separation: Consistent node encoding vs binomial sampling
 """
 
 import pytest
@@ -64,9 +64,9 @@ class TestIPRFCore:
 
     def test_inverse_returns_preimages(self):
         """
-        BUG #2 FIX: Test inverse returns correct preimages in original domain.
+        Test inverse returns correct preimages in original domain.
 
-        All x in inverse(y) should satisfy forward(x) = y.
+        Verifies inverse correctness: all x in inverse(y) satisfy forward(x) = y.
         """
         key = b'0123456789abcdef'
         iprf = IPRF(key=key, domain=10000, range_size=100)
@@ -85,9 +85,10 @@ class TestIPRFCore:
 
     def test_inverse_completeness(self):
         """
-        BUG #10 FIX: Test inverse finds ALL preimages (bin collection completeness).
+        Test inverse finds ALL preimages (completeness property).
 
-        For small domain, brute force check that inverse finds all x mapping to y.
+        For small domain, brute force verification that inverse enumerates
+        all x mapping to y, validating tree traversal correctness.
         """
         key = b'0123456789abcdef'
         iprf = IPRF(key=key, domain=1000, range_size=100)
@@ -109,22 +110,22 @@ class TestIPRFCore:
 
 class TestIPRFPerformance:
     """
-    BUG #1 FIX: Test tree-based inverse is fast (O(log m + k) vs O(n) brute force).
+    Test tree-based inverse achieves O(log m + k) complexity per Theorem 4.4.
     """
 
     def test_inverse_performance(self):
-        """Test inverse is fast even for large domains."""
+        """Test inverse achieves sublinear complexity for large domains."""
         key = b'0123456789abcdef'
 
         # Large domain (simulating database size)
         iprf = IPRF(key=key, domain=100000, range_size=1000)
 
-        # Inverse should be fast (< 10ms for O(log m + k) algorithm)
+        # Inverse should be fast (< 10ms for O(log m + k) tree traversal)
         start = time.time()
         preimages = iprf.inverse(500)
         elapsed = time.time() - start
 
-        assert elapsed < 0.01, f"Inverse too slow: {elapsed*1000:.2f}ms (expected < 10ms)"
+        assert elapsed < 0.01, f"Performance not O(log m + k): {elapsed*1000:.2f}ms (expected < 10ms)"
         assert len(preimages) > 0, "Inverse should return at least one preimage"
 
     def test_inverse_scales_logarithmically(self):
@@ -144,21 +145,21 @@ class TestIPRFPerformance:
 
             times.append(elapsed)
 
-        # Time should not grow linearly with range size
-        # (Would indicate O(m) algorithm instead of O(log m))
+        # Time should grow logarithmically, not linearly with range size
+        # Sublinear scaling validates O(log m) tree depth traversal
         assert times[-1] < times[0] * 5, \
             f"Inverse scaling suggests O(m) instead of O(log m): {times}"
 
 
-class TestBugFixes:
-    """Test specific bug fixes."""
+class TestAlgorithmicProperties:
+    """Test specific algorithmic properties of iPRF construction."""
 
-    def test_bug7_node_encoding_no_collisions(self):
+    def test_node_encoding_collision_free(self):
         """
-        BUG #7 FIX: Test node encoding doesn't have collisions for large n.
+        Test SHA-256 node encoding provides collision-free identifiers.
 
-        Previous bit-packing limited n to 16 bits, causing collisions.
-        SHA-256 approach should handle arbitrary n.
+        Cryptographic hash ensures unique identifiers across arbitrary parameter
+        ranges, supporting large domain sizes without collision concerns.
         """
         # Test large n values (> 2^16 = 65536)
         large_n_values = [100000, 1000000, 10000000]
@@ -176,11 +177,12 @@ class TestBugFixes:
 
                     seen_ids.add(node_id)
 
-    def test_bug6_deterministic_key_derivation(self):
+    def test_deterministic_key_derivation(self):
         """
-        BUG #6 FIX: Test key derivation is deterministic.
+        Test PRF-based key derivation is deterministic (Section 5.2).
 
-        Same master secret + context → same key (prevents hint invalidation).
+        Same master secret + context → same key, ensuring hint validity
+        across server sessions.
         """
         master_secret = b'my-master-secret-key'
         context = 'plinko-iprf-v1'
@@ -196,12 +198,12 @@ class TestBugFixes:
         key3 = derive_iprf_key(master_secret, 'different-context')
         assert key1 != key3, "Different contexts should produce different keys"
 
-    def test_bug8_parameter_separation(self):
+    def test_parameter_separation(self):
         """
-        BUG #8/10 FIX: Test originalN vs ballCount separation.
+        Test correct parameter handling in tree traversal.
 
-        Node encoding should use original n for consistency,
-        binomial sampling should use current ballCount.
+        Validates that node encoding uses fixed domain size for consistency,
+        while binomial sampling uses dynamic ball count in current subtree.
         """
         key = b'0123456789abcdef'
 
@@ -214,7 +216,7 @@ class TestBugFixes:
             preimages = iprf.inverse(y)
 
             assert x in preimages, \
-                f"x={x} not in inverse(forward(x)={y}). Parameter separation bug?"
+                f"x={x} not in inverse(forward(x)={y}). Forward-inverse consistency violated."
 
 
 class TestIPRFDistribution:

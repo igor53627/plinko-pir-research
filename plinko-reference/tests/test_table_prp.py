@@ -1,7 +1,8 @@
 """
 TDD Test Suite for TablePRP Implementation
 
-Tests verify Bug #3 fix (O(1) inverse with perfect bijection).
+Tests verify perfect bijection property with O(1) forward and inverse operations.
+Validates Fisher-Yates shuffle correctness for PRP construction.
 """
 
 import pytest
@@ -55,10 +56,10 @@ class TestTablePRPCore:
 
 class TestTablePRPBijection:
     """
-    BUG #3 FIX: Test TablePRP is a perfect bijection.
+    Test TablePRP implements perfect bijection via Fisher-Yates shuffle.
 
-    Previous cycle walking approach had collision issues.
-    Fisher-Yates guarantees perfect bijection.
+    Validates injectivity (no collisions), surjectivity (all outputs reachable),
+    and round-trip consistency (inverse correctness).
     """
 
     def test_bijection_no_collisions(self):
@@ -87,9 +88,9 @@ class TestTablePRPBijection:
 
     def test_inverse_correctness(self):
         """
-        BUG #3 FIX: Test inverse is correct (inverse(forward(x)) = x).
+        Test inverse correctness (inverse(forward(x)) = x).
 
-        O(1) table lookup should be exact.
+        O(1) table lookup ensures exact inverse via pre-computed mapping.
         """
         key = b'0123456789abcdef'
         prp = TablePRP(domain=1000, key=key)
@@ -110,11 +111,11 @@ class TestTablePRPBijection:
 
 class TestTablePRPPerformance:
     """
-    BUG #3 FIX: Test inverse is O(1) instead of O(n).
+    Test inverse achieves O(1) complexity via pre-computed table lookup.
     """
 
     def test_inverse_performance(self):
-        """Test inverse is fast (O(1) table lookup)."""
+        """Test inverse achieves O(1) complexity (constant-time lookup)."""
         key = b'0123456789abcdef'
         prp = TablePRP(domain=10000, key=key)
 
