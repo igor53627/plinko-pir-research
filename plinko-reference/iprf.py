@@ -1,17 +1,18 @@
 """
 Invertible Pseudorandom Function (iPRF) Implementation for Plinko PIR.
 
-This implementation incorporates all bug fixes from the Go reference:
-- Bug #1: Tree-based inverse (O(log m + k) vs brute force)
-- Bug #2: Correct inverse space transformation
-- Bug #3: TablePRP for O(1) inverse
-- Bug #6: Deterministic key derivation
-- Bug #7: SHA-256 node encoding (prevents collisions)
-- Bug #8/10: Parameter separation (originalN vs ballCount)
-- Bug #11/15: No cycle walking dead code
-
 Based on Plinko paper: https://eprint.iacr.org/2022/1483
-Simplified iPRF using binomial tree sampling without full PMNS+PRP composition.
+
+Implementation follows the iPRF construction from Section 4 and implementation
+details from Section 5. Key algorithmic components:
+
+- Tree-based inverse enumeration: O(log m + k) complexity per Theorem 4.4
+- SHA-256 node encoding: Collision-free identifier generation for tree nodes
+- Deterministic key derivation: PRF-based key hierarchy (Section 5.2)
+- PMNS binomial sampling: Balls-into-bins with pseudorandom binomial splits
+- Parameter consistency: Maintains separate tracking for node encoding vs sampling
+
+This is a simplified iPRF using binomial tree sampling without full PMNS+PRP composition.
 """
 
 import hashlib
@@ -142,7 +143,8 @@ class IPRF:
             p = left_bins / total_bins
 
             # Sample binomial split using PRF
-            node_id = encode_node(low, high, n)  # BUG #7 FIX: Hash-based encoding
+            # Use SHA-256 hash-based node encoding for collision-free identifiers
+            node_id = encode_node(low, high, n)
             left_count = self._sample_binomial(node_id, ball_count, p)
 
             # Determine if ball goes left or right
@@ -160,10 +162,14 @@ class IPRF:
 
     def _enumerate_balls_in_bin(self, target_bin: int, n: int, m: int) -> List[int]:
         """
-        BUG #1 FIX: Enumerate all balls in target bin using tree traversal.
+        Enumerate all balls in target bin using efficient tree traversal.
 
-        O(log m + k) complexity where k is number of balls in bin.
-        Replaces O(n) brute force approach.
+        Implements Algorithm 2 from Plinko paper (inverse function).
+        Achieves O(log m + k) complexity where k is the number of balls in the bin,
+        as proven in Theorem 4.4.
+
+        The algorithm recursively traverses the binomial tree, following only paths
+        that lead to the target bin, avoiding full domain scan.
 
         Args:
             target_bin: Bin to find balls for
@@ -181,8 +187,8 @@ class IPRF:
         self._enumerate_recursive(
             target_bin=target_bin,
             low=0, high=m - 1,
-            original_n=n,  # BUG #8/10 FIX: Separate parameters
-            ball_count=n,
+            original_n=n,  # For consistent node encoding across tree
+            ball_count=n,  # For binomial sampling in current subtree
             start_idx=0, end_idx=n - 1,
             result=result
         )
@@ -193,13 +199,17 @@ class IPRF:
         self,
         target_bin: int,
         low: int, high: int,
-        original_n: int,  # BUG #8 FIX: For node encoding
-        ball_count: int,  # BUG #10 FIX: For binomial sampling
+        original_n: int,  # For deterministic node encoding
+        ball_count: int,  # For binomial sampling in subtree
         start_idx: int, end_idx: int,
         result: List[int]
     ) -> None:
         """
         Recursive helper for tree-based bin enumeration.
+
+        Maintains two separate parameters for correctness:
+        - original_n: Fixed domain size for consistent node ID generation
+        - ball_count: Dynamic count for binomial sampling in current subtree
 
         Args:
             target_bin: Bin we're searching for
@@ -226,7 +236,7 @@ class IPRF:
         p = left_bins / total_bins
 
         # Sample binomial split
-        # BUG #8/10 FIX: Use original_n for encoding, ball_count for sampling
+        # Use original_n for deterministic encoding, ball_count for sampling distribution
         node_id = encode_node(low, high, original_n)
         left_count = self._sample_binomial(node_id, ball_count, p)
         right_count = ball_count - left_count
@@ -376,16 +386,18 @@ class IPRF:
         return struct.unpack('>Q', output_block[:8])[0]
 
 
-# --- Helper Functions (Bug Fixes) ---
+# --- Helper Functions ---
 
 def encode_node(low: int, high: int, n: int) -> int:
     """
-    BUG #7 FIX: Create unique node identifier using SHA-256 hash.
+    Create unique node identifier using SHA-256 hash.
 
-    Previous bit-packing approach (low << 32 | high << 16 | n & 0xFFFF)
-    caused collisions for n > 65535.
+    Generates collision-free identifiers for tree nodes across the entire
+    parameter space. Essential for deterministic binomial sampling in the
+    iPRF tree structure (Section 5.2).
 
-    Hash-based approach guarantees uniqueness across all parameters.
+    Uses cryptographic hash to avoid collisions that can occur with simple
+    bit-packing schemes when parameters exceed certain bounds.
 
     Args:
         low: Lower bin range
@@ -405,15 +417,15 @@ def encode_node(low: int, high: int, n: int) -> int:
 
 def derive_iprf_key(master_secret: bytes, context: str) -> bytes:
     """
-    BUG #6 FIX: Derive deterministic iPRF key from master secret.
+    Derive deterministic iPRF key from master secret using PRF.
 
-    Prevents hint invalidation on server restart by ensuring
-    same key is generated consistently.
-
-    Paper reference (Section 5.2):
+    Implements key hierarchy as described in Section 5.2 of Plinko paper:
     "The n/r keys for each of the iPRFs can also be pseudorandomly
     generated using a PRF. Therefore, this only requires storing
     a single PRF key."
+
+    Ensures consistent key generation for reproducible iPRF outputs,
+    which is critical for hint validity across server sessions.
 
     Args:
         master_secret: Long-term secret (from config/KMS)

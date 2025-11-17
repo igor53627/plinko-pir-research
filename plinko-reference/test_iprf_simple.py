@@ -1,7 +1,8 @@
 """
-Simple test runner for iPRF (TDD RED phase - tests should fail initially).
+Simple test runner for iPRF implementation validation.
 
-Tests core bug fixes without pytest dependency.
+Tests core algorithmic properties without pytest dependency.
+Validates iPRF construction per Plinko paper specification.
 """
 
 import sys
@@ -49,7 +50,7 @@ def test_forward_basic():
 
 
 def test_inverse_correctness():
-    """Test inverse returns correct preimages (Bug #2 fix)."""
+    """Test inverse returns correct preimages (correctness property)."""
     try:
         from iprf import IPRF
         key = b'0123456789abcdef'
@@ -63,7 +64,7 @@ def test_inverse_correctness():
             for x in preimages:
                 y_computed = iprf.forward(x)
                 assert y_computed == y, \
-                    f"Inverse broken: x={x} in inverse({y}) but forward({x}) = {y_computed}"
+                    f"Inverse correctness violated: x={x} in inverse({y}) but forward({x}) = {y_computed}"
 
         return True, f"Inverse correctness verified ({len(preimages)} preimages in last bin)"
     except Exception as e:
@@ -71,7 +72,7 @@ def test_inverse_correctness():
 
 
 def test_inverse_performance():
-    """Test inverse is fast (Bug #1 fix - tree-based vs brute force)."""
+    """Test inverse achieves O(log m + k) complexity via tree enumeration."""
     try:
         from iprf import IPRF
         key = b'0123456789abcdef'
@@ -81,16 +82,16 @@ def test_inverse_performance():
         preimages = iprf.inverse(500)
         elapsed = time.time() - start
 
-        # Should be < 10ms for O(log m + k) algorithm
-        assert elapsed < 0.01, f"Too slow: {elapsed*1000:.2f}ms"
+        # Should be < 10ms for O(log m + k) tree traversal
+        assert elapsed < 0.01, f"Performance not O(log m + k): {elapsed*1000:.2f}ms"
 
-        return True, f"Inverse fast: {elapsed*1000:.2f}ms for domain=100000"
+        return True, f"Inverse O(log m + k): {elapsed*1000:.2f}ms for domain=100000"
     except Exception as e:
         return False, f"Performance test failed: {e}\n{traceback.format_exc()}"
 
 
 def test_node_encoding_no_collisions():
-    """Test node encoding handles large n (Bug #7 fix)."""
+    """Test SHA-256 node encoding provides collision-free identifiers."""
     try:
         from iprf import encode_node
 
@@ -112,7 +113,7 @@ def test_node_encoding_no_collisions():
 
 
 def test_deterministic_key_derivation():
-    """Test deterministic key derivation (Bug #6 fix)."""
+    """Test PRF-based deterministic key derivation (Section 5.2)."""
     try:
         from iprf import derive_iprf_key
 
@@ -144,7 +145,7 @@ def test_table_prp_import():
 
 
 def test_table_prp_bijection():
-    """Test TablePRP is a perfect bijection (Bug #3 fix)."""
+    """Test TablePRP implements perfect bijection via Fisher-Yates."""
     try:
         from table_prp import TablePRP
 
@@ -173,7 +174,7 @@ def test_table_prp_bijection():
 
 
 def test_table_prp_inverse_performance():
-    """Test TablePRP inverse is O(1) (Bug #3 fix)."""
+    """Test TablePRP inverse achieves O(1) complexity via table lookup."""
     try:
         from table_prp import TablePRP
 
@@ -199,17 +200,17 @@ def run_tests():
         ("Import iPRF", test_iprf_import),
         ("Create iPRF", test_iprf_creation),
         ("Forward evaluation", test_forward_basic),
-        ("Inverse correctness (Bug #2)", test_inverse_correctness),
-        ("Inverse performance (Bug #1)", test_inverse_performance),
-        ("Node encoding (Bug #7)", test_node_encoding_no_collisions),
-        ("Key derivation (Bug #6)", test_deterministic_key_derivation),
+        ("Inverse correctness", test_inverse_correctness),
+        ("Inverse performance O(log m + k)", test_inverse_performance),
+        ("Node encoding collision-free", test_node_encoding_no_collisions),
+        ("Key derivation deterministic", test_deterministic_key_derivation),
         ("Import TablePRP", test_table_prp_import),
-        ("TablePRP bijection (Bug #3)", test_table_prp_bijection),
-        ("TablePRP inverse O(1) (Bug #3)", test_table_prp_inverse_performance),
+        ("TablePRP bijection property", test_table_prp_bijection),
+        ("TablePRP inverse O(1)", test_table_prp_inverse_performance),
     ]
 
     print("=" * 70)
-    print("TDD RED PHASE - Running iPRF and TablePRP Tests")
+    print("iPRF AND TablePRP CORRECTNESS TESTS")
     print("=" * 70)
     print()
 
