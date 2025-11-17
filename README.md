@@ -102,44 +102,24 @@ python3 test_iprf_simple.py
 # 10/10 tests passing (100%)
 ```
 
-## Research Summary
+## Research Findings
 
-### Key Findings
+Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
 
-| Research Area | Finding | Status |
-|---------------|---------|--------|
-| **eth_getBalance** | ✅ **VIABLE** - 5.6M recent addresses, ~5 ms queries | PoC Implemented |
-| **eth_call** | ❌ **NOT VIABLE** - Storage explosion (10B+ slots) | [Analysis](research/findings/phase7-summary.md) |
-| **eth_getLogs (Full)** | ❌ **NOT VIABLE** - 500B logs, 150 TB database | [Analysis](research/findings/phase7-summary.md) |
-| **eth_getLogs (Per-User)** | ✅ **HIGHLY VIABLE** - 30K logs/user, 7.7 MB database | [Analysis](research/findings/phase7-summary.md) |
-| **eth_getLogs (50K Blocks)** | ✅ **FEASIBLE** - 200M logs, 6.4-51 GB (with compression) | [Analysis](research/archive/fixed-size-log-compression.md) |
-| **Fixed-Size Compression** | ✅ **VIABLE** - 4 approaches analyzed, 8-62× reduction | [Analysis](research/archive/fixed-size-log-compression.md) |
+- **eth_getBalance**: ✅ Production viable (5.6M addresses, 5ms queries, $0.09-0.14/user/month)
+- **eth_getLogs (Per-User)**: ✅ Highly viable (30K logs/user, 7.7 MB database)
+- **eth_getLogs (Rolling Window)**: ✅ Feasible (50K blocks, 6.4-51 GB with compression)
+- **eth_call**: ❌ Not viable (storage explosion: 10B+ slots)
 
-### Balance Queries (eth_getBalance)
+**Key Innovation**: First PIR system achieving real-time blockchain sync (79× faster updates than SimplePIR)
 
-**Verdict**: ✅ **PRODUCTION VIABLE**
-
-```
-Configuration:
-  - Database: 5,575,868 addresses (balances from the last 100K Ethereum blocks)
-  - Entry size: 8 bytes (uint64 balance)
-  - Snapshot artifacts: ~43 MB (database.bin) + ~128 MB (address-mapping.bin)
-  - Query latency: ~5ms
-  - Update latency: 23.75ms per 2,000 accounts (Plinko cache mode)
-```
-
-> **Note**: The PoC/development environment (see IMPLEMENTATION.md) uses 8.4M simulated accounts via Anvil for scalability testing, while production deployment uses 5.6M real mainnet addresses.
-
-**Use Cases:**
-- Privacy-focused wallets (MetaMask alternative)
-- DeFi portfolio trackers
-- Tax reporting tools
-- Whale watchers
-
-**Cost**: $0.09-0.14/user/month for 10K users
+**[View detailed research findings →](research/FINDINGS.md)**
 
 ## Documentation
 
+- **[Research Findings](research/FINDINGS.md)**: Comprehensive analysis, innovations, and use cases
+- **[API Reference](docs/API_REFERENCE.md)**: Complete API documentation for all services
+- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**: Common issues and debugging
 - **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment instructions
 - **[Development Guide](DEVELOPMENT.md)**: Detailed development setup and contribution guide
 - **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
@@ -183,59 +163,6 @@ rsync -avz reth-onion-dev:~/plinko-balances/balance_diffs_blocks-*.parquet raw_b
 # 2. Build the artifacts (writes into ./data/)
 python3 scripts/build_database_from_parquet.py --input raw_balances --output data
 ```
-
-## Key Innovations
-
-### 1. Real-Time Blockchain Synchronization
-
-**First PIR system** to achieve real-time sync with 12-second Ethereum blocks using Plinko's O(1) updates.
-
-### 2. Smart Event Log Compression
-
-[Template-based compression](research/archive/fixed-size-log-compression.md) reduces logs to fixed 256-byte entries:
-- 85% coverage with 50 event templates
-- ERC20/721 transfers, Uniswap swaps, DeFi events
-- 8× database size reduction
-- Lossless for common patterns
-
-### 3. Hybrid Architecture
-
-Combines three storage tiers:
-- **Cuckoo Filters** (6.4 GB): Mobile-friendly references
-- **Smart Compression** (51 GB): Desktop/server deployment
-- **IPFS Fallback**: Complex events
-
-## Use Cases
-
-### Privacy Wallets
-
-**Problem**: MetaMask reveals every address you query to Infura
-**Solution**: Plinko PIR wallet with Privacy Mode
-
-- Download 70 MB snapshot package (derive hint locally, one-time)
-- Query any balance in 5ms (private!)
-- Update with 60 KB deltas every block
-- Cost: $0.09-0.14/user/month
-
-### DeFi Analytics
-
-**Problem**: Querying DeFi positions reveals trading strategies
-**Solution**: Private log queries for recent activity (50K blocks)
-
-- 7-day rolling window
-- 6.4-51 GB database (depending on compression)
-- Track Uniswap swaps, Aave positions privately
-- 40-60ms query latency
-
-### Tax Reporting
-
-**Problem**: Tax tools see all wallet addresses
-**Solution**: Per-user log database
-
-- 30K logs/user = 7.7 MB database
-- Complete transaction history
-- Private query execution
-- Export to tax software
 
 ## Development
 
