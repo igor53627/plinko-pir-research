@@ -55,8 +55,7 @@ All research artifacts are in the [`research/`](research/) directory:
   - Performance benchmarks
   - Comparative analysis
 - **[research/research-plan.md](research/research-plan.md)** - Original research plan
-- **[research/POC-IMPLEMENTATION.md](research/POC-IMPLEMENTATION.md)** - FrodoPIR analysis
-- **[research/POC-PLINKO-IMPLEMENTATION.md](research/POC-PLINKO-IMPLEMENTATION.md)** - Plinko implementation
+- **[research/archive/POC-PLINKO-IMPLEMENTATION.md](research/archive/POC-PLINKO-IMPLEMENTATION.md)** - Plinko implementation (archived)
 
 ## PoC Architecture
 
