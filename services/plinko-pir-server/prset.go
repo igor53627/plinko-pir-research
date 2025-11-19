@@ -39,6 +39,13 @@ func (prs *PRSet) Expand(setSize uint64, chunkSize uint64) []uint64 {
 	return indices
 }
 
+// GetIndex calculates the database index for the i-th chunk
+// without allocating a slice. Useful for streaming/parallel processing.
+func (prs *PRSet) GetIndex(i uint64, chunkSize uint64) uint64 {
+	offset := prs.prfEvalMod(i, chunkSize)
+	return i*chunkSize + offset
+}
+
 // prfEvalMod evaluates PRF(key, x) mod m using AES-128
 func (prs *PRSet) prfEvalMod(x uint64, m uint64) uint64 {
 	if m == 0 {
