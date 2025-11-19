@@ -1,6 +1,6 @@
-const DATABASE_BYTES = 44_606_944;       // database.bin (8 bytes × 5,575,868 entries)
+const DATABASE_BYTES = 178_427_776;       // database.bin (32 bytes × 5,575,868 entries)
 const ADDRESS_MAPPING_BYTES = 133_820_832; // address-mapping.bin (24 bytes × 5,575,868 entries)
-const HINT_BYTES = 87_818_272;           // hint.bin derived locally (~80 MB)
+const HINT_BYTES = 178_427_808;           // hint.bin derived locally (header + database)
 const ADDRESS_COUNT = 5_575_868;
 
 const bytesToMB = (bytes) => Number((bytes / 1024 / 1024).toFixed(1));
