@@ -19,6 +19,7 @@ export const PlinkoPIRProvider = ({ children }) => {
   const [hintDownloaded, setHintDownloaded] = useState(false);
   const [hintSize, setHintSize] = useState(0);
   const [deltasApplied, setDeltasApplied] = useState(0);
+  const [downloadProgress, setDownloadProgress] = useState(null); // { stage: string, percent: number }
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [rabbyDetected, setRabbyDetected] = useState(false);
@@ -50,6 +51,11 @@ export const PlinkoPIRProvider = ({ children }) => {
       console.log('🦊 Rabby wallet detected');
       setRabbyDetected(true);
     }
+    // Load persisted delta count
+    const savedDeltas = localStorage.getItem('deltasApplied');
+    if (savedDeltas) {
+      setDeltasApplied(parseInt(savedDeltas, 10));
+    }
   }, []);
 
   // Toggle privacy mode
@@ -65,7 +71,9 @@ export const PlinkoPIRProvider = ({ children }) => {
         console.log(`📥 Downloading Plinko PIR snapshot + address mapping (~${DATASET_DISPLAY.totalSnapshotMB} MB total)...`);
         const startTime = performance.now();
 
-        await pirClient.downloadHint();
+        await pirClient.downloadHint((stage, percent) => {
+          setDownloadProgress({ stage, percent });
+        });
 
         const elapsed = performance.now() - startTime;
         const size = pirClient.getHintSize();
@@ -107,7 +115,11 @@ export const PlinkoPIRProvider = ({ children }) => {
           const elapsed = performance.now() - startTime;
 
           console.log(`✅ Applied ${count} deltas in ${elapsed.toFixed(1)}ms`);
-          setDeltasApplied(prev => prev + count);
+          setDeltasApplied(prev => {
+            const newVal = prev + count;
+            localStorage.setItem('deltasApplied', String(newVal));
+            return newVal;
+          });
         }
       } catch (err) {
         console.error('⚠️ Delta sync failed:', err);
@@ -148,10 +160,10 @@ export const PlinkoPIRProvider = ({ children }) => {
           balance: fallbackBalance,
           visualization: result.visualization
             ? {
-                ...result.visualization,
-                saturated: true,
-                fallbackBalanceWei: fallbackBalance.toString()
-              }
+              ...result.visualization,
+              saturated: true,
+              fallbackBalanceWei: fallbackBalance.toString()
+            }
             : null,
           saturated: true,
           fallbackSource: 'rpc'
@@ -168,7 +180,7 @@ export const PlinkoPIRProvider = ({ children }) => {
 
   // Fallback to public RPC
   const fetchBalancePublic = async (address) => {
-    const fallbackRPC = import.meta.env.VITE_FALLBACK_RPC || 'http://localhost:8545';
+    const fallbackRPC = import.meta.env.VITE_FALLBACK_RPC || 'https://eth.drpc.org';
 
     console.log(`🌐 Public RPC URL: ${fallbackRPC}`);
     console.log(`📍 Querying address: ${address}`);
@@ -195,6 +207,7 @@ export const PlinkoPIRProvider = ({ children }) => {
     hintDownloaded,
     hintSize,
     deltasApplied,
+    downloadProgress,
     isLoading,
     error,
     rabbyDetected,
