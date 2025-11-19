@@ -144,7 +144,8 @@ export class PlinkoPIRClient {
     let lastError = null;
     for (const url of urls) {
       try {
-        return await this.downloadBinary(url, label, fallbackSize, onProgress);
+        // Use the URL itself as the cache key for snapshot files (they are versioned)
+        return await this.downloadBinary(url, label, fallbackSize, onProgress, url);
       } catch (err) {
         console.warn(`⚠️  Download failed for ${url}: ${err.message}`);
         lastError = err;
@@ -153,7 +154,26 @@ export class PlinkoPIRClient {
     throw lastError || new Error(`Failed to download ${label}`);
   }
 
-  async downloadBinary(url, label, fallbackSize, onProgress) {
+  async downloadBinary(url, label, fallbackSize, onProgress, cacheKey = null) {
+    const CACHE_NAME = 'plinko-data-v1';
+    const hasCacheApi = typeof caches !== 'undefined';
+
+    // 1. Check cache first
+    if (cacheKey && hasCacheApi) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(cacheKey);
+        if (cachedResponse) {
+          console.log(`📦 Served ${label} from cache`);
+          if (onProgress) onProgress(100);
+          const buffer = await cachedResponse.arrayBuffer();
+          return new Uint8Array(buffer);
+        }
+      } catch (err) {
+        console.warn('Cache check failed:', err);
+      }
+    }
+
     console.log(`📥 Downloading ${label} from ${url}...`);
     const response = await fetch(url, {
       cache: 'no-store',
@@ -204,6 +224,19 @@ export class PlinkoPIRClient {
       chunksAll.set(chunk, position);
       position += chunk.length;
     }
+
+    // 2. Save to cache
+    if (cacheKey && hasCacheApi) {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const responseToCache = new Response(chunksAll);
+        await cache.put(cacheKey, responseToCache);
+        console.log(`💾 Cached ${label}`);
+      } catch (err) {
+        console.warn('Failed to write to cache:', err);
+      }
+    }
+
     const finalSize = (receivedLength / 1024 / 1024).toFixed(1);
     console.log(`✅ Downloaded ${label} (${finalSize} MB)`);
     return chunksAll;
@@ -227,8 +260,11 @@ export class PlinkoPIRClient {
     const mappingBytes = mappingEntries * 24;
     const mappingMB = Number((mappingBytes / 1024 / 1024).toFixed(1));
     const mappingLabel = `address-mapping.bin (~${mappingMB} MB)`;
-    console.log(`📥 Downloading ${mappingLabel}...`);
-    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes, onProgress);
+    
+    // Use snapshot version in cache key to ensure we get matching mapping for the DB
+    const cacheKey = `address-mapping-${this.snapshotVersion}`;
+
+    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes, onProgress, cacheKey);
 
     const mappingData = chunksAll.buffer;
     const view = new DataView(mappingData);

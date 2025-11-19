@@ -55,12 +55,44 @@ export class PlinkoClient {
   async downloadDelta(blockNumber) {
     const filename = `delta-${blockNumber.toString().padStart(6, '0')}.bin`;
     const url = `${this.cdnUrl}/deltas/${filename}`;
+    const CACHE_NAME = 'plinko-deltas-v1';
 
+    // Check if Cache API is supported (requires HTTPS or localhost)
+    if (typeof caches !== 'undefined') {
+      try {
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(url);
+
+        if (cachedResponse) {
+          console.log(`📦 Served ${filename} from cache`);
+          const data = await cachedResponse.arrayBuffer();
+          return new Uint8Array(data);
+        }
+
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to download delta ${filename}: ${response.status}`);
+        }
+
+        // Cache the successful response
+        try {
+            cache.put(url, response.clone());
+        } catch (e) {
+            console.warn('Failed to cache delta:', e);
+        }
+
+        const data = await response.arrayBuffer();
+        return new Uint8Array(data);
+      } catch (err) {
+        console.warn('Cache operation failed, falling back to network:', err);
+      }
+    }
+
+    // Fallback (No Cache API or Cache Error)
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to download delta ${filename}: ${response.status}`);
     }
-
     const data = await response.arrayBuffer();
     return new Uint8Array(data);
   }
@@ -71,25 +103,49 @@ export class PlinkoClient {
    * Format:
    * [0:8]   Delta count (uint64)
    * [8:16]  Reserved (uint64)
-   * Then for each delta (24 bytes):
+   * Then for each delta (48 bytes):
    *   [0:8]   HintSetID (uint64)
    *   [8:16]  IsBackupSet (uint64)
-   *   [16:24] Delta value (uint64)
+   *   [16:48] Delta value (4 * uint64)
    */
   parseDelta(deltaData) {
-    const view = new DataView(deltaData.buffer);
+    if (!deltaData || !deltaData.buffer) {
+      console.warn('Invalid delta data');
+      return [];
+    }
+
+    // Use byteOffset and byteLength to handle subarrays correctly
+    const view = new DataView(deltaData.buffer, deltaData.byteOffset, deltaData.byteLength);
+
+    if (view.byteLength < 16) {
+      console.warn(`Delta file too short (no header). Length: ${view.byteLength}`);
+      return [];
+    }
+
     const count = Number(view.getBigUint64(0, true));
+    const expectedSize = 16 + count * 48;
+
+    if (view.byteLength < expectedSize) {
+      console.warn(`Delta file truncated. Expected ${expectedSize} bytes, got ${view.byteLength} bytes. Count: ${count}`);
+      return [];
+    }
 
     const deltas = [];
     let offset = 16; // Skip header
 
     for (let i = 0; i < count; i++) {
+      // Read 32-byte delta (4 * uint64)
+      const deltaVal = new Uint8Array(32);
+      for (let j = 0; j < 32; j++) {
+        deltaVal[j] = view.getUint8(offset + 16 + j);
+      }
+
       deltas.push({
         hintSetID: Number(view.getBigUint64(offset, true)),
         isBackupSet: view.getBigUint64(offset + 8, true) !== 0n,
-        delta: view.getBigUint64(offset + 16, true)
+        delta: deltaVal
       });
-      offset += 24;
+      offset += 48;
     }
 
     return deltas;
@@ -159,17 +215,12 @@ export class PlinkoClient {
     }
 
     // Calculate offset in hint for this hint set
-    // Offset = header (32 bytes) + hintSetID * chunkSize * 8 bytes
+    // Offset = header (32 bytes) + hintSetID * chunkSize * 32 bytes
     const metadata = pirClient.metadata;
-    const offset = 32 + (delta.hintSetID * metadata.chunkSize * 8);
+    const offset = 32 + (delta.hintSetID * metadata.chunkSize * 32);
 
-    // Convert delta value to bytes
-    const deltaBytes = new Uint8Array(8);
-    const view = new DataView(deltaBytes.buffer);
-    view.setBigUint64(0, delta.delta, true);
-
-    // Apply XOR delta
-    pirClient.applyDelta(deltaBytes, offset);
+    // Apply XOR delta (delta.delta is already Uint8Array(32))
+    pirClient.applyDelta(delta.delta, offset);
   }
 
   /**

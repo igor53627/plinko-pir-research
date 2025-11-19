@@ -1,0 +1,31 @@
+name: Deploy to Vultr
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        
+    - name: Deploy to Vultr
+      env:
+        INSTANCE_IP: "45.76.8.100"
+        SSH_USER: "root"
+        SSH_KEY_PATH: ~/.ssh/id_ed25519
+      run: |
+        # Skip Vultr API lookup by providing IP
+        ./scripts/vultr-deploy.sh up

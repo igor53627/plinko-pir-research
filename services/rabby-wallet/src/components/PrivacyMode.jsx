@@ -8,6 +8,7 @@ export const PrivacyMode = () => {
     hintDownloaded,
     hintSize,
     deltasApplied,
+    downloadProgress,
     isLoading,
     error,
     togglePrivacyMode
@@ -20,29 +21,34 @@ export const PrivacyMode = () => {
   const formattedAddressCount = DATASET_STATS.addressCount.toLocaleString();
 
   return (
-    <div className="privacy-mode">
-      <div className="privacy-header">
-        <h2>🔒 Privacy Mode</h2>
-        <label className="toggle-switch">
-          <input
-            type="checkbox"
-            checked={privacyMode}
-            onChange={togglePrivacyMode}
-            disabled={isLoading}
-          />
-          <span className="slider"></span>
-        </label>
-      </div>
+    <div className="privacy-content">
+
 
       <div className="privacy-status">
         {isLoading && (
           <div className="status-loading">
             <div className="spinner"></div>
             <p>Downloading Plinko PIR snapshot + address map...</p>
+
+            {downloadProgress && (
+              <div className="progress-container">
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${downloadProgress.percent}%` }}
+                  ></div>
+                </div>
+                <p className="progress-text">
+                  {downloadProgress.stage === 'database' && `Downloading Database (${downloadProgress.percent}%)`}
+                  {downloadProgress.stage === 'address_mapping' && `Downloading Address Map (${downloadProgress.percent}%)`}
+                  {downloadProgress.stage === 'hint_generation' && `Generating Local Hints...`}
+                </p>
+              </div>
+            )}
+
             <p className="status-hint">
               This is a one-time ~{totalSnapshotMB} MB download (snapshot database {databaseMB} MB + address-mapping.bin {mappingMB} MB)
             </p>
-            <p className="status-hint">Check browser console for progress updates</p>
           </div>
         )}
 
@@ -55,9 +61,23 @@ export const PrivacyMode = () => {
 
         {!isLoading && !error && (
           <div className={`status-info ${privacyMode ? 'enabled' : 'disabled'}`}>
+            <div className="status-header-row">
+              <h3>
+                {privacyMode ? '✅ Privacy Mode Enabled' : '⚠️ Privacy Mode Disabled'}
+              </h3>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={privacyMode}
+                  onChange={togglePrivacyMode}
+                  disabled={isLoading}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+
             {privacyMode ? (
               <>
-                <h3>✅ Privacy Mode Enabled</h3>
                 <p>Your balance queries are private and cannot be tracked by the RPC provider.</p>
 
                 {hintDownloaded && (
@@ -67,7 +87,7 @@ export const PrivacyMode = () => {
                       <span className="value">{(hintSize / 1024 / 1024).toFixed(1)} MB</span>
                     </div>
                     <div className="status-item">
-                      <span className="label">Deltas Applied:</span>
+                      <span className="label">Deltas Applied (Account Updates):</span>
                       <span className="value">{deltasApplied}</span>
                     </div>
                     <div className="status-item">
@@ -79,7 +99,6 @@ export const PrivacyMode = () => {
               </>
             ) : (
               <>
-                <h3>⚠️ Privacy Mode Disabled</h3>
                 <p>Your balance queries are sent to a public RPC provider who can see which addresses you query.</p>
                 <button onClick={togglePrivacyMode} className="enable-button">
                   Enable Privacy Mode
@@ -98,13 +117,17 @@ export const PrivacyMode = () => {
             (database {databaseMB} MB + address-mapping.bin {mappingMB} MB, hint derived locally ~{hintMB} MB)
             covering {formattedAddressCount} real Ethereum addresses
           </li>
-          <li><strong>Plinko PIR Queries</strong>: Query balances without revealing which address you're interested in</li>
+          <li><strong>Plinko PIR Queries</strong>: Query balances without revealing which address you're interested in. The server computes a parity over a pseudorandom set of accounts.</li>
+          <li><strong>Decoding Process</strong>: Your client locally reconstructs the answer by XORing the server's response with your local hint parity.</li>
           <li><strong>Incremental Updates</strong>: Each block update covers ~2,000 accounts (23.75 μs processing time)</li>
           <li><strong>Information-Theoretic Privacy</strong>: Server learns absolutely nothing about your queries</li>
         </ul>
 
         <p className="privacy-performance">
           <strong>Performance:</strong> ~5ms query latency | ~{totalSnapshotMB} MB one-time download | ~30 KB per block update
+        </p>
+        <p className="ui-version" style={{ textAlign: 'right', fontSize: '0.7rem', color: '#444', marginTop: '10px' }}>
+          UI Version: v1.2.0 (Caching + Label Updates)
         </p>
       </div>
     </div>
