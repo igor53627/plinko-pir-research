@@ -5,10 +5,10 @@ import (
 )
 
 const (
-	DBEntrySize   = 8  // Size of each database entry in bytes
-	DBEntryLength = 1  // Number of uint64 values per database entry
+	DBEntrySize   = 32  // Size of each database entry in bytes
+	DBEntryLength = 4  // Number of uint64 values per database entry
 	
-	// Note: The current implementation assumes DBEntryLength = 1.
+	// Note: The current implementation assumes DBEntryLength = 4.
 	// If this changes, the indexing logic in applyDatabaseUpdate and other
 	// functions may need to be reviewed for correctness.
 )

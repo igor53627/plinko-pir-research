@@ -15,7 +15,7 @@ A high-performance, privacy-preserving server implementation of the **Plinko** S
 The system consists of three main components:
 
 1.  **Server (`cmd/server`)**:
-    -   Stores the database (flat array of `uint64` values).
+    -   Stores the database (flat array of 256-bit (32-byte) entries).
     -   Responds to PIR queries by computing parities over pseudorandom sets.
     -   Stateless and horizontally scalable.
 
@@ -35,13 +35,13 @@ The system consists of three main components:
 ### `POST /query/fullset`
 Performs a standard PIR query using a PRF key.
 -   **Input**: `{"prf_key": "hex_encoded_16_bytes"}`
--   **Output**: `{"value": uint64_parity}`
+-   **Output**: `{"value": string (decimal representation of 256-bit parity)}`
 -   **Description**: The server expands the PRF key to a set of indices and computes their XOR parity.
 
 ### `POST /query/setparity`
 Performs a PIR query using an explicit set of indices.
 -   **Input**: `{"indices": [id1, id2, ...]}`
--   **Output**: `{"parity": uint64_parity}`
+-   **Output**: `{"parity": string (decimal representation of 256-bit parity)}`
 -   **Description**: Used by the client for "punctured set" queries where specific indices need to be included/excluded.
 
 ### `GET /health`
