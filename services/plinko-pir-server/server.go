@@ -7,7 +7,9 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -224,17 +226,62 @@ func (s *PlinkoPIRServer) HandleFullSetQuery(prfKeyBytes []byte) DBEntry {
 	copy(prfKey[:], prfKeyBytes)
 
 	prSet := NewPRSet(prfKey)
-	expandedSet := prSet.Expand(s.setSize, s.chunkSize)
 
-	var parity DBEntry
-	for _, id := range expandedSet {
-		entry := s.DBAccess(id)
+	// Determine number of workers based on CPU cores
+	numWorkers := runtime.NumCPU()
+	if uint64(numWorkers) > s.setSize {
+		numWorkers = int(s.setSize)
+	}
+
+	// Use a wait group to wait for all workers
+	var wg sync.WaitGroup
+	// Channel to collect partial results
+	partialResults := make([]DBEntry, numWorkers)
+
+	// Calculate items per worker
+	itemsPerWorker := s.setSize / uint64(numWorkers)
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			start := uint64(workerID) * itemsPerWorker
+			end := start + itemsPerWorker
+			if workerID == numWorkers-1 {
+				end = s.setSize
+			}
+
+			var localParity DBEntry
+			for i := start; i < end; i++ {
+				// Compute index on-the-fly (Streaming)
+				// This avoids allocating a massive slice of indices
+				id := prSet.GetIndex(i, s.chunkSize)
+
+				// Parallel fetch from database
+				entry := s.DBAccess(id)
+
+				// XOR into local parity accumulator
+				for k := 0; k < DBEntryLength; k++ {
+					localParity[k] ^= entry[k]
+				}
+			}
+			partialResults[workerID] = localParity
+		}(w)
+	}
+
+	// Wait for all workers to finish
+	wg.Wait()
+
+	// Aggregate partial results
+	var finalParity DBEntry
+	for _, partial := range partialResults {
 		for k := 0; k < DBEntryLength; k++ {
-			parity[k] ^= entry[k]
+			finalParity[k] ^= partial[k]
 		}
 	}
 
-	return parity
+	return finalParity
 }
 
 func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.Request) {
