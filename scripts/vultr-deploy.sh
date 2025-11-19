@@ -145,6 +145,7 @@ sync_repo() {
     "--exclude=.git"
     "--exclude=.env"
     "--exclude=node_modules"
+    "--exclude=data"
     "--exclude=public-data"
     "--exclude=raw_balances"
     "--exclude=test-data"
