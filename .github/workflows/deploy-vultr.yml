@@ -25,7 +25,7 @@ jobs:
       env:
         INSTANCE_IP: "45.76.8.100"
         SSH_USER: "root"
-        SSH_KEY_PATH: ~/.ssh/id_ed25519
       run: |
         # Skip Vultr API lookup by providing IP
+        export SSH_KEY_PATH="$HOME/.ssh/id_ed25519"
         ./scripts/vultr-deploy.sh up

@@ -15,7 +15,14 @@ fi
 
 API_KEY="${VULTR_API_KEY:-}"
 TAG="${VULTR_TAG:-plinko-pir}"
-SSH_KEY_PATH="${SSH_KEY:-}"
+# Respect SSH_KEY_PATH if set (e.g. CI), fallback to SSH_KEY (.env)
+if [[ -n "${SSH_KEY_PATH:-}" ]]; then
+  : # Already set
+elif [[ -n "${SSH_KEY:-}" ]]; then
+  SSH_KEY_PATH="$SSH_KEY"
+else
+  SSH_KEY_PATH=""
+fi
 SSH_USER="${VULTR_SSH_USER:-root}"
 REMOTE_DIR="${VULTR_REMOTE_DIR:-/opt/plinko-pir}"
 
