@@ -14,7 +14,8 @@ import { DATASET_STATS } from '../constants/dataset.js';
 const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
   ? globalThis.crypto
   : null;
-const UINT64_MAX = (1n << 64n) - 1n;
+const UINT256_MAX = (1n << 256n) - 1n;
+const UINT64_MAX = 18446744073709551615n;
 
 export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
@@ -23,8 +24,8 @@ export class PlinkoPIRClient {
     this.hint = null;
     this.addressMapping = null; // Map from address hex -> index
     this.metadata = null;
-     this.snapshotVersion = null;
-     this.snapshotManifest = null;
+    this.snapshotVersion = null;
+    this.snapshotManifest = null;
     this._prfScratch = null;
   }
 
@@ -33,7 +34,7 @@ export class PlinkoPIRClient {
    * Derive hint locally from the canonical snapshot (43 MB)
    * Total download: ~170 MB (snapshot database ~42.6 MB + address-mapping.bin ~127.6 MB)
    */
-  async downloadHint() {
+  async downloadHint(onProgress) {
     console.log(`📥 Fetching snapshot manifest...`);
     const manifest = await this.fetchSnapshotManifest();
     this.snapshotManifest = manifest;
@@ -56,19 +57,22 @@ export class PlinkoPIRClient {
     const snapshotBytes = await this.downloadFromCandidates(
       snapshotUrls,
       `snapshot database (${(databaseFile.size / 1024 / 1024).toFixed(1)} MB)`,
-      databaseFile.size
+      databaseFile.size,
+      (percent) => onProgress && onProgress('database', percent)
     );
 
     await this.verifySnapshotHash(snapshotBytes, databaseFile.sha256 || databaseFile.SHA256);
 
     console.log(`🔐 Deriving local hint from snapshot...`);
+    if (onProgress) onProgress('hint_generation', 0);
     this.hint = this.buildHintFromSnapshot(snapshotBytes, this.metadata);
+    if (onProgress) onProgress('hint_generation', 100);
     const finalSize = (this.hint.byteLength / 1024 / 1024).toFixed(1);
     console.log(`✅ Local hint generated (${finalSize} MB)`);
     console.log(`📊 Hint metadata:`, this.metadata);
 
     // Download address-mapping.bin
-    await this.downloadAddressMapping();
+    await this.downloadAddressMapping((percent) => onProgress && onProgress('address_mapping', percent));
   }
 
   async fetchSnapshotManifest() {
@@ -137,11 +141,11 @@ export class PlinkoPIRClient {
       .join('');
   }
 
-  async downloadFromCandidates(urls, label, fallbackSize) {
+  async downloadFromCandidates(urls, label, fallbackSize, onProgress) {
     let lastError = null;
     for (const url of urls) {
       try {
-        return await this.downloadBinary(url, label, fallbackSize);
+        return await this.downloadBinary(url, label, fallbackSize, onProgress);
       } catch (err) {
         console.warn(`⚠️  Download failed for ${url}: ${err.message}`);
         lastError = err;
@@ -150,7 +154,7 @@ export class PlinkoPIRClient {
     throw lastError || new Error(`Failed to download ${label}`);
   }
 
-  async downloadBinary(url, label, fallbackSize) {
+  async downloadBinary(url, label, fallbackSize, onProgress) {
     console.log(`📥 Downloading ${label} from ${url}...`);
     const response = await fetch(url, {
       cache: 'no-store',
@@ -173,8 +177,8 @@ export class PlinkoPIRClient {
     let lastLogTime = Date.now();
     const startTime = Date.now();
 
-    while(true) {
-      const {done, value} = await reader.read();
+    while (true) {
+      const { done, value } = await reader.read();
       if (done) break;
 
       chunks.push(value);
@@ -189,6 +193,7 @@ export class PlinkoPIRClient {
           const elapsed = (now - startTime) / 1000;
           const speed = (receivedLength / 1024 / 1024 / elapsed).toFixed(1);
           console.log(`📶 ${label}: ${percent}% (${receivedMB}/${totalMB} MB) - ${speed} MB/s`);
+          if (onProgress) onProgress(Number(percent));
           lastLogTime = now;
         }
       }
@@ -214,7 +219,7 @@ export class PlinkoPIRClient {
    * - Prevents serving stale Anvil test data
    * - Forces fresh download of real Ethereum address mapping
    */
-  async downloadAddressMapping() {
+  async downloadAddressMapping(onProgress) {
     // Add cache-busting timestamp to force fresh download
     // This ensures we get the NEW file, not cached old Anvil data
     const timestamp = Date.now();
@@ -224,7 +229,7 @@ export class PlinkoPIRClient {
     const mappingMB = Number((mappingBytes / 1024 / 1024).toFixed(1));
     const mappingLabel = `address-mapping.bin (~${mappingMB} MB)`;
     console.log(`📥 Downloading ${mappingLabel}...`);
-    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes);
+    const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes, onProgress);
 
     const mappingData = chunksAll.buffer;
     const view = new DataView(mappingData);
@@ -496,7 +501,7 @@ export class PlinkoPIRClient {
     const saturated = targetBalance === UINT64_MAX;
 
     if (saturated) {
-      console.warn('⚠️ Balance hit uint64 cap in dataset; account exceeds 64-bit range');
+      console.warn('⚠️ Balance hit uint256 cap in dataset; account exceeds 256-bit range');
     }
 
     console.log(`✅ Decoded balance: ${targetBalance} wei`);
@@ -576,12 +581,19 @@ export class PlinkoPIRClient {
    * @returns {bigint} - Balance value at index
    */
   readDBEntry(hintData, dbStart, index) {
-    const offset = dbStart + index * 8; // 8 bytes per entry
-    if (offset + 8 > hintData.length) {
+    const offset = dbStart + index * 32; // 32 bytes per entry
+    if (offset + 32 > hintData.length) {
       return 0n; // Out of bounds
     }
     const view = new DataView(hintData.buffer, hintData.byteOffset);
-    return view.getBigUint64(offset, true); // Little-endian
+
+    // Read 4 uint64s little-endian and combine to 256-bit integer
+    let val = 0n;
+    for (let i = 0; i < 4; i++) {
+      const word = view.getBigUint64(offset + i * 8, true);
+      val += word << BigInt(i * 64);
+    }
+    return val;
   }
 
   getPrfScratch() {
