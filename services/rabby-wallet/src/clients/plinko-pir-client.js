@@ -15,7 +15,6 @@ const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
   ? globalThis.crypto
   : null;
 const UINT256_MAX = (1n << 256n) - 1n;
-const UINT64_MAX = 18446744073709551615n;
 
 export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
@@ -498,7 +497,7 @@ export class PlinkoPIRClient {
     // For this PoC: hint should match database exactly, so balance = hintValue
     // In production with updates: would need to apply delta if hint is stale
     const targetBalance = hintValue;
-    const saturated = targetBalance === UINT64_MAX;
+    const saturated = targetBalance === UINT256_MAX;
 
     if (saturated) {
       console.warn('⚠️ Balance hit uint256 cap in dataset; account exceeds 256-bit range');

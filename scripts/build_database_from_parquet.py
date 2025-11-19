@@ -60,7 +60,7 @@ def main():
             if addr is None or bal_bytes is None:
                 continue
             balance = int.from_bytes(bal_bytes, "big", signed=False)
-            balances[addr] = clamp_uint64(balance)
+            balances[addr] = balance
         print(f"[{idx}/{len(files)}] processed {path.name} ({rows} rows). Total unique addresses: {len(balances)}")
 
     if not balances:
@@ -75,7 +75,16 @@ def main():
 
     with db_path.open("wb") as db_file, mapping_path.open("wb") as map_file:
         for index, (addr, balance) in enumerate(sorted_items):
-            db_file.write(struct.pack("<Q", balance))
+            # Convert large integer balance to 4x uint64 little-endian words
+            words = []
+            temp_bal = balance
+            mask = (1 << 64) - 1
+            for _ in range(4):
+                words.append(temp_bal & mask)
+                temp_bal >>= 64
+            
+            # Write 32 bytes (4 * uint64) 
+            db_file.write(struct.pack("<QQQQ", words[0], words[1], words[2], words[3]))
             map_file.write(addr)
             map_file.write(struct.pack("<I", index))
 
