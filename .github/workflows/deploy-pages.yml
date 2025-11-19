@@ -1,0 +1,62 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./services/rabby-wallet
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: services/rabby-wallet/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      env:
+        # Point to the Vultr instance
+        # Note: This will cause Mixed Content warnings (HTTPS -> HTTP)
+        # The user must accept "Load Unsafe Scripts" or configure SSL on Vultr
+        VITE_PIR_SERVER_URL: "http://45.76.8.100:8080/api"
+        VITE_CDN_URL: "http://45.76.8.100:8080"
+        VITE_FALLBACK_RPC: "https://eth.drpc.org"
+      run: npm run build
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./services/rabby-wallet/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

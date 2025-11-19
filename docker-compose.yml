@@ -28,20 +28,14 @@ services:
   # Service 1: Ethereum Mock (Anvil)
   # Address: eth-mock:8545 (Docker internal only)
   # Purpose: Simulated Ethereum blockchain with 8.4M pre-funded accounts
-  eth-mock:
-    build: ./services/eth-mock
-    container_name: plinko-pir-eth-mock
-    # Internal only - not exposed to host
-    volumes:
-      - shared-data:/data
-    # Healthcheck disabled - curl not available in container
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8545"]
-    #   interval: 10s
-    #   timeout: 5s
-    #   retries: 5
-    networks:
-      - plinko-network
+  # Service 1: Ethereum Mock (Anvil) - DISABLED for Production
+  # eth-mock:
+  #   build: ./services/eth-mock
+  #   container_name: plinko-pir-eth-mock
+  #   volumes:
+  #     - shared-data:/data
+  #   networks:
+  #     - plinko-network
 
   # Service 2: Plinko Update Service (always running)
   # External: http://localhost:3001 (health check only)
@@ -52,12 +46,15 @@ services:
     container_name: plinko-pir-updates
     ports:
       - "3001:3001"
+    environment:
+      - PLINKO_UPDATE_RPC_URL=${PLINKO_UPDATE_RPC_URL:-https://ethereum.publicnode.com}
+      - PLINKO_UPDATE_SIMULATED=false
     volumes:
       - shared-data:/data
       - public-artifacts:/public
-    depends_on:
-      eth-mock:
-        condition: service_started
+    # depends_on:
+    #   eth-mock:
+    #     condition: service_started
     healthcheck:
       test: ["CMD", "test", "-d", "/data/deltas"]
       interval: 10s
@@ -70,13 +67,13 @@ services:
     build: ./services/state-syncer
     container_name: plinko-state-syncer
     environment:
-      - PLINKO_STATE_RPC_URL=${PLINKO_STATE_RPC_URL:-https://eth.rpc.hypersync.xyz}
+      - PLINKO_STATE_RPC_URL=${PLINKO_STATE_RPC_URL:-https://ethereum.publicnode.com}
       - PLINKO_STATE_RPC_TOKEN=${PLINKO_STATE_RPC_TOKEN:-}
       - PLINKO_STATE_START_BLOCK=${PLINKO_STATE_START_BLOCK:-0}
-      - PLINKO_STATE_SIMULATED=${PLINKO_STATE_SIMULATED:-true}
+      - PLINKO_STATE_SIMULATED=false
       - PLINKO_STATE_HTTP_PORT=${PLINKO_STATE_HTTP_PORT:-3002}
       - PLINKO_STATE_IPFS_API=${PLINKO_STATE_IPFS_API:-http://ipfs:5001}
-      - PLINKO_STATE_IPFS_GATEWAY=${PLINKO_STATE_IPFS_GATEWAY:-http://localhost:8080/ipfs}
+      - PLINKO_STATE_IPFS_GATEWAY=${PLINKO_STATE_IPFS_GATEWAY:-/cdn/ipfs}
     volumes:
       - shared-data:/data
       - public-artifacts:/public
@@ -133,7 +130,7 @@ services:
     build: ./services/rabby-wallet
     container_name: plinko-wallet
     ports:
-      - "5173:80"  # Nginx serves on port 80, exposed as 5173
+      - "80:80"  # Expose directly on port 80, replacing the old proxy
     environment:
       - VITE_PIR_SERVER_URL=${VITE_PIR_SERVER_URL:-http://localhost:3000}
       - VITE_CDN_URL=${VITE_CDN_URL:-http://localhost:8080}

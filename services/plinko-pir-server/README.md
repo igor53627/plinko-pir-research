@@ -1,394 +1,81 @@
-# Plinko PIR Server (Go)
+# Plinko PIR Server
 
-**Purpose**: Private Information Retrieval server for querying Ethereum balances without revealing which address
+A high-performance, privacy-preserving server implementation of the **Plinko** Single-Server PIR protocol. This service allows clients to query a database (e.g., Ethereum account balances) without revealing *which* item they are querying to the server.
 
-## Privacy Guarantee
+## Features
 
-**Information-Theoretic Privacy**: Server learns absolutely nothing about which account the client queried
+-   **Information-Theoretic Privacy**: The server sees only pseudorandom queries and cannot determine the target index.
+-   **Plinko Protocol**: Implements the full Plinko system with **Invertible PRFs (iPRF)** for optimal efficiency.
+    -   **O(1) Hint Search**: Clients can find relevant hints in constant time.
+    -   **O(1) Updates**: Clients can update their local state efficiently when the database changes.
+-   **High Performance**: In-memory database for low-latency query processing.
 
-- ❌ Server **NEVER** logs queried addresses
-- ✅ Client queries are **indistinguishable** from random noise to server
-- ✅ Even with infinite computational power, server cannot determine query target
+## Architecture
 
-## Configuration
+The system consists of three main components:
 
-- **Input**: `/data/database.bin` (canonical Balance DB built via `scripts/build_database_from_parquet.py`)
-- **HTTP Port**: Defaults to `3000`; override with `PLINKO_PIR_SERVER_PORT`, `SERVER_PORT`, or `PORT`
-- **Database Path**: Defaults to `/data/database.bin`; override with `PLINKO_PIR_DATABASE_PATH`, `PLINKO_PIR_DB_PATH`, `DATABASE_PATH`, or `DB_PATH` (legacy `PLINKO_PIR_HINT_PATH` continues to point to a database snapshot)
-- **Database Wait Timeout**: Defaults to 120s; override with `PLINKO_PIR_DATABASE_TIMEOUT_SECONDS`, `PLINKO_PIR_DB_TIMEOUT_SECONDS`, `DATABASE_TIMEOUT_SECONDS`, or `DB_TIMEOUT_SECONDS` (set to 0 to disable waiting)
-- **Query Latency**: <10ms (from research: ~5ms for 8.4M database)
-- **Database**: In-memory (64 MB for 8.4M accounts)
+1.  **Server (`cmd/server`)**:
+    -   Stores the database (flat array of 256-bit (32-byte) entries).
+    -   Responds to PIR queries by computing parities over pseudorandom sets.
+    -   Stateless and horizontally scalable.
 
-## Performance
+2.  **Client Library (`pkg/client`)**:
+    -   **Offline Phase**: Streams the database to generate compact "hints".
+    -   **Online Phase**: Generates privacy-preserving queries using iPRF inversion.
+    -   **Hint Management**: Manages primary and backup hints to support multiple queries.
+    -   **Updates**: Applies database diffs to local hints in O(1) time.
 
-**Query Performance** (from Plinko PIR research):
-- **PlaintextQuery**: <1ms (direct lookup)
-- **FullSetQuery**: ~5ms (Plinko PIR with k=1,024 sets)
-- **SetParityQuery**: ~2-3ms (simplified query)
-
-**Memory Usage**: ~130 MB
-- 64 MB database
-- 64 MB overhead (server structures)
+3.  **Core Primitives (`pkg/iprf`)**:
+    -   **PMNS**: Pseudorandom Multinomial Sampler.
+    -   **PRP**: Small-Domain Pseudorandom Permutation.
+    -   **iPRF**: Composition of PMNS and PRP providing efficient forward `F(x)` and inverse `F^-1(y)` evaluation.
 
 ## API Endpoints
 
-### Health Check
+### `POST /query/fullset`
+Performs a standard PIR query using a PRF key.
+-   **Input**: `{"prf_key": "hex_encoded_16_bytes"}`
+-   **Output**: `{"value": string (decimal representation of 256-bit parity)}`
+-   **Description**: The server expands the PRF key to a set of indices and computes their XOR parity.
 
-```bash
-GET /health
-```
+### `POST /query/setparity`
+Performs a PIR query using an explicit set of indices.
+-   **Input**: `{"indices": [id1, id2, ...]}`
+-   **Output**: `{"parity": string (decimal representation of 256-bit parity)}`
+-   **Description**: Used by the client for "punctured set" queries where specific indices need to be included/excluded.
 
-**Response**:
-```json
-{
-  "status": "healthy",
-  "service": "piano-pir-server",
-  "db_size": 8388608,
-  "chunk_size": 8192,
-  "set_size": 1024
-}
-```
-
-### Plaintext Query (Testing Only)
-
-⚠️ **Not Private** - Use only for testing/debugging
-
-```bash
-POST /query/plaintext
-Content-Type: application/json
-
-{
-  "index": 42
-}
-```
-
-**Response**:
-```json
-{
-  "value": 1000000000000000000000,
-  "server_time_nanos": 450000
-}
-```
-
-### Full Set Query (Plinko PIR)
-
-✅ **Information-Theoretically Private**
-
-```bash
-POST /query/fullset
-Content-Type: application/json
-
-{
-  "prf_key": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
-}
-```
-
-**Response**:
-```json
-{
-  "value": 1234567890,
-  "server_time_nanos": 5200000
-}
-```
-
-**How it works**:
-1. Client generates random PRF key
-2. Server expands key to pseudorandom set of indices
-3. Server computes XOR parity over the set
-4. Client decodes response to extract desired value
-5. Server learns nothing about which index client wanted
-
-### Set Parity Query (Simplified)
-
-✅ **Private** (when used with Plinko PIR protocol)
-
-```bash
-POST /query/setparity
-Content-Type: application/json
-
-{
-  "indices": [100, 500, 1000, 2000]
-}
-```
-
-**Response**:
-```json
-{
-  "parity": 9876543210,
-  "server_time_nanos": 2800000
-}
-```
+### `GET /health`
+Returns service health and configuration.
 
 ## Usage
 
-### Start with Docker Compose
+### Prerequisites
+-   Go 1.21+
+-   A database file (flat binary of `uint64` entries)
+
+### Running the Server
+
 ```bash
-docker-compose up piano-pir-server
+# Set environment variables
+export PLINKO_PIR_DATABASE_PATH="./data/database.bin"
+export PLINKO_PIR_SERVER_PORT="3000"
+
+# Run
+go run main.go
 ```
 
-### Manual Testing
-```bash
-# Build service
-docker-compose build piano-pir-server
-
-# Run service (waits for database.bin)
-docker-compose run --rm -p 3000:3000 piano-pir-server
-
-# Test health endpoint
-curl http://localhost:3000/health
-
-# Test plaintext query
-curl -X POST http://localhost:3000/query/plaintext \
-  -H "Content-Type: application/json" \
-  -d '{"index": 42}'
-
-# Test Plinko PIR query
-curl -X POST http://localhost:3000/query/fullset \
-  -H "Content-Type: application/json" \
-  -d '{"prf_key": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]}'
-```
-
-## Testing
-
-Run unit tests for the Go services:
-```bash
-cd services/plinko-pir-server
-go test ./...
-
-cd ../plinko-update-service
-go test ./...
-```
-
-Run the browser PRF tests (shared AES vectors):
-```bash
-cd services/rabby-wallet
-npm install
-npm test -- --run
-```
-
-
-## Privacy Implementation
-
-### Critical Privacy Rules
-
-**NEVER log queried addresses**:
-```go
-// ❌ NEVER DO THIS:
-log.Printf("Query for address %s", address)
-log.Printf("User queried index %d", index)
-
-// ✅ OK to log:
-log.Printf("Query completed in %v", duration)
-log.Printf("SetParity query (%d indices) completed", len(indices))
-```
-
-**Why this matters**:
-- Even a single logged address breaks privacy
-- Logs can be subpoenaed, hacked, or leaked
-- Privacy must be **perfect**, not "good enough"
-
-### Plinko PIR Privacy Proof
-
-Plinko PIR provides **information-theoretic privacy**:
-
-1. **Client generates random PRF key** k ← {0,1}^128
-2. **Server expands key to set** S = Expand(k, setSize)
-3. **Server computes parity** p = ⊕_{i ∈ S} DB[i]
-4. **Client decodes** using knowledge of S
-
-**Privacy argument**:
-- Server sees only random key k
-- Set S is pseudorandom and reveals nothing about target index
-- Even with unlimited compute, server cannot determine query
-
-## Implementation Details
-
-### Database Loading
-
-Loads the canonical database snapshot and derives Plinko PIR parameters locally:
+### Client Example (Go)
 
 ```go
-data := readFile("/data/database.bin")
-dbEntries := uint64(len(data) / 8)
+import "piano-pir-server/pkg/client"
 
-chunkSize, setSize := derivePlinkoParams(dbEntries)
-database := make([]uint64, chunkSize*setSize)
-copy(database, parseEntries(data))
+// Initialize
+c := client.NewClient(dbSize, numHints, keyAlpha, keyBeta)
+c.HintInit(dbStream)
+
+// Query
+req, hint, err := c.Query(targetIndex)
+// Send req to server...
+// Receive response...
+value := c.Reconstruct(response, hint)
 ```
-
-### Full Set Query Algorithm
-
-```go
-func HandleFullSetQuery(prfKey []byte) uint64 {
-    // 1. Expand PRF key to pseudorandom set
-    prSet := NewPRSet(prfKey)
-    indices := prSet.Expand(setSize, chunkSize)
-
-    // 2. Compute XOR parity
-    parity := 0
-    for _, idx := range indices {
-        parity ^= database[idx]
-    }
-
-    return parity
-}
-```
-
-**Time Complexity**: O(k) where k = setSize (1,024)
-**Space Complexity**: O(1) additional space
-
-### PRSet Expansion
-
-Pseudorandom set expands k → setSize indices:
-
-```go
-func (prs *PRSet) Expand(setSize, chunkSize uint64) []uint64 {
-    indices := make([]uint64, setSize)
-
-    for i := 0; i < setSize; i++ {
-        // Generate random offset in chunk i
-        offset := PRF(prs.Key, i) % chunkSize
-
-        // Database index = chunk_start + offset
-        indices[i] = i*chunkSize + offset
-    }
-
-    return indices
-}
-```
-
-## Files
-
-- `main.go` - HTTP server, query handlers, database loading
-- `prset.go` - Pseudorandom set expansion for Plinko PIR
-- `go.mod` - Go module (no external dependencies)
-- `Dockerfile` - Multi-stage build for minimal image
-- `README.md` - This file
-
-## Troubleshooting
-
-**Problem**: Timeout waiting for database.bin
-- Ensure `scripts/build_database_from_parquet.py` produced up-to-date `data/database.bin`
-- Check generator logs for errors
-- Verify filesystem permissions for the canonical DB snapshot
-
-**Problem**: Slow queries (>50ms)
-- Check database loaded in memory (not reading from disk)
-- Verify sufficient RAM (needs ~130 MB)
-- Look for CPU throttling
-
-**Problem**: Connection refused
-- Check service started successfully
-- Verify port 3000 is not in use
-- Check Docker network connectivity
-
-**Problem**: "Invalid PRF key" error
-- PRF key must be exactly 16 bytes
-- Encode as JSON array: `[0,1,2,...,15]`
-
-## Production Considerations
-
-### HTTPS/TLS
-
-Add TLS for production:
-
-```go
-// Generate self-signed cert for testing
-// openssl req -x509 -newkey rsa:4096 -nodes \
-//   -keyout key.pem -out cert.pem -days 365
-
-http.ListenAndServeTLS(":3000", "cert.pem", "key.pem", nil)
-```
-
-### Rate Limiting
-
-Prevent DoS attacks:
-
-```go
-import "golang.org/x/time/rate"
-
-limiter := rate.NewLimiter(100, 200) // 100 req/s, burst 200
-
-http.HandleFunc("/query/fullset", func(w http.ResponseWriter, r *http.Request) {
-    if !limiter.Allow() {
-        http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-        return
-    }
-    // ... handle query
-})
-```
-
-### Monitoring
-
-Track query latency without breaking privacy:
-
-```go
-// ✅ OK - no address info
-prometheus.Histogram("pir_query_latency_ms").Observe(elapsed.Milliseconds())
-prometheus.Counter("pir_queries_total").Inc()
-
-// ❌ NEVER - leaks query info
-prometheus.Counter("pir_queries_by_address").WithLabelValues(address).Inc()
-```
-
-### Horizontal Scaling
-
-Plinko PIR server is stateless (except database):
-
-1. **Replicate database** to multiple servers
-2. **Load balance** queries across replicas
-3. **Update coordination**: All servers update from same Plinko deltas
-
-```
-                    ┌─────────────┐
-      Queries  ────>│ Load Balancer│
-                    └──────┬───────┘
-           ┌───────────────┼───────────────┐
-           ▼               ▼               ▼
-    ┌─────────┐     ┌─────────┐     ┌─────────┐
-    │ PIR Srv │     │ PIR Srv │     │ PIR Srv │
-    │ + DB    │     │ + DB    │     │ + DB    │
-    └────┬────┘     └────┬────┘     └────┬────┘
-         │               │               │
-         └───────────────┴───────────────┘
-                         │
-                    ┌────▼────┐
-                    │ Plinko  │
-                    │ Deltas  │
-                    └─────────┘
-```
-
-## Plinko PIR Protocol
-
-### Query Flow
-
-1. **Client wants balance of address A**
-2. Client computes: `index_A = lookup(A)` in local address mapping
-3. Client generates: `k ← PRF.KeyGen()`
-4. Client constructs: `query = FullSetQuery(k)` such that `index_A ∈ Expand(k)`
-5. Server responds: `parity = ⊕_{i ∈ Expand(k)} DB[i]`
-6. Client decodes: `balance_A = decode(parity, k, index_A)`
-7. **Privacy**: Server learned nothing about A or index_A
-
-### Why This Works
-
-**Intuition**: Client's query is a large random set that includes target index
-
-- Set size k = 1,024 (for 8.4M database)
-- Target index hidden among 1,023 random indices
-- Server cannot distinguish target from noise
-- XOR parity enables extraction by client
-
-**Formal proof**: See Plinko PIR paper (arXiv:2305.14562)
-
-## Next Steps
-
-After Plinko PIR Server:
-1. **CDN Mock**: Serve public snapshot packages + delta feeds for client downloads
-2. **Ambire Wallet**: Client implementation with Privacy Mode
-3. **Integration Testing**: Verify end-to-end private queries
-4. **Performance Testing**: Validate <10ms latency target
-
----
-
-**Status**: Query Privacy ✅ | In-Memory Database ✅ | HTTP API ✅

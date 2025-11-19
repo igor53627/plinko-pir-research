@@ -8,10 +8,21 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   # shellcheck disable=SC1090
   set -a && source "$ROOT_DIR/.env" && set +a
 fi
+if [[ -f "$ROOT_DIR/.env.deploy" ]]; then
+  # shellcheck disable=SC1090
+  set -a && source "$ROOT_DIR/.env.deploy" && set +a
+fi
 
 API_KEY="${VULTR_API_KEY:-}"
 TAG="${VULTR_TAG:-plinko-pir}"
-SSH_KEY_PATH="${SSH_KEY:-}"
+# Respect SSH_KEY_PATH if set (e.g. CI), fallback to SSH_KEY (.env)
+if [[ -n "${SSH_KEY_PATH:-}" ]]; then
+  : # Already set
+elif [[ -n "${SSH_KEY:-}" ]]; then
+  SSH_KEY_PATH="$SSH_KEY"
+else
+  SSH_KEY_PATH=""
+fi
 SSH_USER="${VULTR_SSH_USER:-root}"
 REMOTE_DIR="${VULTR_REMOTE_DIR:-/opt/plinko-pir}"
 
@@ -91,6 +102,9 @@ PY
 }
 
 ensure_instance() {
+  if [[ -n "${INSTANCE_IP:-}" ]]; then
+    return
+  fi
   local summary
   summary=$(fetch_instance_summary)
   IFS='|' read -r INSTANCE_IP INSTANCE_ID INSTANCE_LABEL INSTANCE_REGION INSTANCE_PLAN INSTANCE_TAGS <<<"$summary"
@@ -131,6 +145,7 @@ sync_repo() {
     "--exclude=.git"
     "--exclude=.env"
     "--exclude=node_modules"
+    "--exclude=data"
     "--exclude=public-data"
     "--exclude=raw_balances"
     "--exclude=test-data"
@@ -182,7 +197,12 @@ case "$cmd" in
     require_env SSH_KEY_PATH
     sync_repo
     compose_run "docker compose pull"
-    compose_run "docker compose up -d --build --remove-orphans"
+    # Ensure clean slate to avoid name conflicts
+    compose_run "docker compose down --remove-orphans || true"
+    # Aggressively remove potential zombie containers that block deployment
+    # Names must match docker-compose.yml container_name fields exactly
+    compose_run "docker rm -f plinko-pir-server plinko-pir-updates plinko-pir-cdn plinko-wallet plinko-state-syncer plinko-ipfs plinko-nginx-proxy || true"
+    compose_run "docker compose up -d --build --force-recreate --remove-orphans"
     ;;
   down)
     check_tools

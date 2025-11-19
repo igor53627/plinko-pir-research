@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"strconv"
@@ -11,8 +12,8 @@ import (
 )
 
 const (
-	DBEntrySize   = 8
-	DBEntryLength = 1
+	DBEntrySize   = 32
+	DBEntryLength = 4
 )
 
 type DBEntry [DBEntryLength]uint64
@@ -29,7 +30,7 @@ type PlaintextQueryRequest struct {
 }
 
 type PlaintextQueryResponse struct {
-	Value           uint64 `json:"value"`
+	Value           string `json:"value"`
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
@@ -38,7 +39,7 @@ type FullSetQueryRequest struct {
 }
 
 type FullSetQueryResponse struct {
-	Value           uint64 `json:"value"`
+	Value           string `json:"value"`
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
@@ -47,7 +48,7 @@ type SetParityQueryRequest struct {
 }
 
 type SetParityQueryResponse struct {
-	Parity          uint64 `json:"parity"`
+	Parity          string `json:"parity"`
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
@@ -86,9 +87,16 @@ func loadServer(databasePath string) *PlinkoPIRServer {
 	chunkSize, setSize := derivePlinkoParams(dbSize)
 	totalEntries := chunkSize * setSize
 
-	database := make([]uint64, totalEntries)
+	// database slice holds flattened uint64 words
+	database := make([]uint64, totalEntries*DBEntryLength)
+
 	for i := 0; i < entryCount; i++ {
-		database[i] = binary.LittleEndian.Uint64(data[i*DBEntrySize : (i+1)*DBEntrySize])
+		for j := 0; j < DBEntryLength; j++ {
+			offset := i*DBEntrySize + j*8
+			if offset+8 <= len(data) {
+				database[i*DBEntryLength+j] = binary.LittleEndian.Uint64(data[offset : offset+8])
+			}
+		}
 	}
 
 	return &PlinkoPIRServer{
@@ -102,9 +110,13 @@ func loadServer(databasePath string) *PlinkoPIRServer {
 func (s *PlinkoPIRServer) DBAccess(id uint64) DBEntry {
 	if id < uint64(len(s.database)/DBEntryLength) {
 		startIdx := id * DBEntryLength
-		return DBEntry{s.database[startIdx]}
+		var entry DBEntry
+		for i := 0; i < DBEntryLength; i++ {
+			entry[i] = s.database[startIdx+uint64(i)]
+		}
+		return entry
 	}
-	return DBEntry{0}
+	return DBEntry{}
 }
 
 func (s *PlinkoPIRServer) healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -116,6 +128,7 @@ func (s *PlinkoPIRServer) healthHandler(w http.ResponseWriter, r *http.Request) 
 		"db_size":    s.dbSize,
 		"chunk_size": s.chunkSize,
 		"set_size":   s.setSize,
+		"entry_size": DBEntrySize,
 	})
 }
 
@@ -151,7 +164,7 @@ func (s *PlinkoPIRServer) plaintextQueryHandler(w http.ResponseWriter, r *http.R
 	elapsed := time.Since(startTime)
 
 	resp := PlaintextQueryResponse{
-		Value:           entry[0],
+		Value:           entry.String(),
 		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
 	}
 
@@ -192,13 +205,13 @@ func (s *PlinkoPIRServer) fullSetQueryHandler(w http.ResponseWriter, r *http.Req
 	elapsed := time.Since(startTime)
 
 	log.Printf("✅ FullSet query completed in %v\n", elapsed)
-	log.Printf("Server response: Parity value (uint64): %d\n", parity[0])
+	log.Printf("Server response: Parity value: %s\n", parity.String())
 	log.Println("Server remains oblivious to queried address!")
 	log.Println("========================================")
 	log.Println()
 
 	resp := FullSetQueryResponse{
-		Value:           parity[0],
+		Value:           parity.String(),
 		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
 	}
 
@@ -216,7 +229,9 @@ func (s *PlinkoPIRServer) HandleFullSetQuery(prfKeyBytes []byte) DBEntry {
 	var parity DBEntry
 	for _, id := range expandedSet {
 		entry := s.DBAccess(id)
-		parity[0] ^= entry[0]
+		for k := 0; k < DBEntryLength; k++ {
+			parity[k] ^= entry[k]
+		}
 	}
 
 	return parity
@@ -241,7 +256,7 @@ func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.R
 	log.Printf("SetParity query (%d indices) completed in %v\n", len(req.Indices), elapsed)
 
 	resp := SetParityQueryResponse{
-		Parity:          parity[0],
+		Parity:          parity.String(),
 		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
 	}
 
@@ -253,7 +268,21 @@ func (s *PlinkoPIRServer) HandleSetParityQuery(indices []uint64) DBEntry {
 	var parity DBEntry
 	for _, index := range indices {
 		entry := s.DBAccess(index)
-		parity[0] ^= entry[0]
+		for k := 0; k < DBEntryLength; k++ {
+			parity[k] ^= entry[k]
+		}
 	}
 	return parity
+}
+
+// String returns the decimal string representation of the 256-bit integer
+func (e DBEntry) String() string {
+	// Convert [4]uint64 (little-endian) to big.Int
+	val := new(big.Int)
+	for i := 0; i < DBEntryLength; i++ {
+		word := new(big.Int).SetUint64(e[i])
+		word.Lsh(word, uint(i*64))
+		val.Add(val, word)
+	}
+	return val.String()
 }

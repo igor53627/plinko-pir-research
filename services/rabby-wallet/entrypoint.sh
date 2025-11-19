@@ -26,11 +26,8 @@ echo "  VITE_CDN_URL: ${CDN_URL}"
 if [ -d "$ASSETS_DIR" ]; then
     for file in "$ASSETS_DIR"/*.js; do
         if [ -f "$file" ]; then
-            # Replace http://localhost:8545 with the configured fallback RPC
-            sed -i "s|http://localhost:8545|${FALLBACK_RPC}|g" "$file"
-
-            # Also replace any other localhost variations
-            sed -i "s|\"localhost:8545\"|\"${FALLBACK_RPC#http://}\"|g" "$file"
+            # Replace https://eth.drpc.org with the configured fallback RPC
+            sed -i "s|https://eth.drpc.org|${FALLBACK_RPC}|g" "$file"
         fi
     done
     echo "✓ Environment variables injected"

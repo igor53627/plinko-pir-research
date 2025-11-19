@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	DBEntrySize   = 8  // Size of each database entry in bytes
-	DBEntryLength = 1  // Number of uint64 values per database entry (DBEntrySize / 8)
-	
-	// Note: The current implementation assumes DBEntryLength = 1.
+	DBEntrySize   = 32 // Size of each database entry in bytes
+	DBEntryLength = 4  // Number of uint64 values per database entry (DBEntrySize / 8)
+
+	// Note: The current implementation assumes DBEntryLength = 4.
 	// If this changes, the indexing logic in applyDatabaseUpdate and other
 	// functions may need to be reviewed for correctness.
 
@@ -181,9 +181,14 @@ func loadDatabase(path string) ([]uint64, uint64, uint64, uint64) {
 	chunkSize, setSize := derivePlinkoParams(dbSize)
 	totalEntries := chunkSize * setSize
 
-	database := make([]uint64, totalEntries)
+	database := make([]uint64, totalEntries*DBEntryLength)
 	for i := 0; i < dbEntries; i++ {
-		database[i] = binary.LittleEndian.Uint64(data[i*DBEntrySize : (i+1)*DBEntrySize])
+		for j := 0; j < DBEntryLength; j++ {
+			offset := i*DBEntrySize + j*8
+			if offset+8 <= len(data) {
+				database[i*DBEntryLength+j] = binary.LittleEndian.Uint64(data[offset : offset+8])
+			}
+		}
 	}
 
 	return database, dbSize, chunkSize, setSize
@@ -288,7 +293,8 @@ func (s *PlinkoUpdateService) detectChanges(ctx context.Context, blockNumber uin
 		oldValue := s.readDBEntry(index)
 
 		// Generate new value (simulated change)
-		newValue := DBEntry{uint64(blockNumber)*1000 + uint64(i)}
+		var newValue DBEntry
+		newValue[0] = uint64(blockNumber)*1000 + uint64(i)
 
 		updates[i] = DBUpdate{
 			Index:    index,
@@ -344,8 +350,18 @@ func (s *PlinkoUpdateService) detectRPCChanges(ctx context.Context, blockNumber 
 		}
 
 		oldValue := s.readDBEntry(index)
-		newValue := DBEntry{balance.Uint64()}
-		if oldValue[0] == newValue[0] {
+		newValue := bigIntToDBEntry(balance)
+
+		// Check if value changed
+		changed := false
+		for i := 0; i < DBEntryLength; i++ {
+			if oldValue[i] != newValue[i] {
+				changed = true
+				break
+			}
+		}
+
+		if !changed {
 			continue
 		}
 
@@ -359,39 +375,92 @@ func (s *PlinkoUpdateService) detectRPCChanges(ctx context.Context, blockNumber 
 	return updates
 }
 
+func bigIntToDBEntry(b *big.Int) DBEntry {
+	var entry DBEntry
+	if b == nil {
+		return entry
+	}
+	// Make a copy to not modify original
+	val := new(big.Int).Set(b)
+	mask := new(big.Int).SetUint64(0xFFFFFFFFFFFFFFFF)
+
+	for i := 0; i < DBEntryLength; i++ {
+		word := new(big.Int).And(val, mask)
+		entry[i] = word.Uint64()
+		val.Rsh(val, 64)
+	}
+	return entry
+}
+
 func (s *PlinkoUpdateService) readDBEntry(index uint64) DBEntry {
 	if index >= uint64(len(s.database)/DBEntryLength) {
 		return DBEntry{}
 	}
-	return DBEntry{s.database[index]}
+	startIdx := index * DBEntryLength
+	var entry DBEntry
+	for i := 0; i < DBEntryLength; i++ {
+		entry[i] = s.database[startIdx+uint64(i)]
+	}
+	return entry
 }
 
 func saveDelta(path string, deltas []HintDelta) error {
-	f, err := os.Create(path)
+	// Create a temporary file in the same directory
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, "delta-*.tmp")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer f.Close()
+	tempPath := f.Name()
+	
+	// Clean up temp file on error
+	defer func() {
+		if err != nil {
+			f.Close()
+			os.Remove(tempPath)
+		}
+	}()
 
 	// Write delta count
 	var header [16]byte
 	binary.LittleEndian.PutUint64(header[0:8], uint64(len(deltas)))
 	binary.LittleEndian.PutUint64(header[8:16], 0) // Reserved
 
-	if _, err := f.Write(header[:]); err != nil {
-		return err
+	if _, err = f.Write(header[:]); err != nil {
+		return fmt.Errorf("failed to write header: %w", err)
 	}
 
 	// Write each delta
+	// Format: [8 bytes HintSetID] [8 bytes IsBackupSet] [32 bytes Delta]
 	for _, delta := range deltas {
-		var entry [24]byte
+		var entry [48]byte
 		binary.LittleEndian.PutUint64(entry[0:8], delta.HintSetID)
 		binary.LittleEndian.PutUint64(entry[8:16], boolToUint64(delta.IsBackupSet))
-		binary.LittleEndian.PutUint64(entry[16:24], delta.Delta[0])
 
-		if _, err := f.Write(entry[:]); err != nil {
-			return err
+		for i := 0; i < DBEntryLength; i++ {
+			binary.LittleEndian.PutUint64(entry[16+i*8:24+i*8], delta.Delta[i])
 		}
+
+		if _, err = f.Write(entry[:]); err != nil {
+			return fmt.Errorf("failed to write delta entry: %w", err)
+		}
+	}
+
+	// Ensure data is written to disk
+	if err = f.Sync(); err != nil {
+		return fmt.Errorf("failed to sync file: %w", err)
+	}
+
+	if err = f.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	// Atomic rename
+	if err = os.Rename(tempPath, path); err != nil {
+		// Attempt to remove temp file since rename failed and deferred cleanup
+		// might not trigger if err was nil before this block
+		os.Remove(tempPath) 
+		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
 	return nil

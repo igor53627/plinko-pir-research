@@ -225,16 +225,19 @@ func loadDatabase(path string) ([]uint64, uint64, uint64, uint64, error) {
 	if err != nil {
 		return nil, 0, 0, 0, fmt.Errorf("read database: %w", err)
 	}
-	if len(data)%8 != 0 {
-		return nil, 0, 0, 0, fmt.Errorf("database size %d invalid", len(data))
+	if len(data)%DBEntrySize != 0 {
+		return nil, 0, 0, 0, fmt.Errorf("database size %d invalid (not multiple of %d)", len(data), DBEntrySize)
 	}
-	dbEntries := uint64(len(data) / 8)
+	dbEntries := uint64(len(data) / DBEntrySize)
 	chunkSize, setSize := derivePlinkoParams(dbEntries)
 	totalEntries := chunkSize * setSize
 
-	database := make([]uint64, totalEntries)
+	database := make([]uint64, totalEntries*DBEntryLength)
 	for i := uint64(0); i < dbEntries; i++ {
-		database[i] = binary.LittleEndian.Uint64(data[i*8 : (i+1)*8])
+		for j := 0; j < DBEntryLength; j++ {
+			offset := i*DBEntrySize + uint64(j)*8
+			database[i*DBEntryLength+uint64(j)] = binary.LittleEndian.Uint64(data[offset : offset+8])
+		}
 	}
 
 	return database, dbEntries, chunkSize, setSize, nil
@@ -246,21 +249,29 @@ func flushDatabase(path string, db []uint64, dbSize uint64) error {
 	if err != nil {
 		return err
 	}
-	buf := make([]byte, 8)
-	limit := dbSize
+	defer f.Close() // Ensure file is closed even on error
+
+	buf := make([]byte, DBEntrySize)
+	limit := dbSize * DBEntryLength // Iterate over actual uint64 words in the flattened array
+
 	if limit > uint64(len(db)) {
 		limit = uint64(len(db))
 	}
-	for i := uint64(0); i < limit; i++ {
-		binary.LittleEndian.PutUint64(buf, db[i])
+
+	for i := uint64(0); i < dbSize; i++ {
+		for j := 0; j < DBEntryLength; j++ {
+			binary.LittleEndian.PutUint64(buf[j*8:(j+1)*8], db[i*DBEntryLength+uint64(j)])
+		}
 		if _, err := f.Write(buf); err != nil {
-			f.Close()
 			return err
 		}
 	}
-	if err := f.Close(); err != nil {
+
+	// Ensure all data is written to disk before renaming
+	if err := f.Sync(); err != nil {
 		return err
 	}
+
 	return os.Rename(tmp, path)
 }
 
@@ -270,26 +281,38 @@ func saveDelta(path string, deltas []HintDelta) error {
 	if err != nil {
 		return err
 	}
+	defer f.Close() // Ensure file is closed even on error
+
 	var header [16]byte
 	binary.LittleEndian.PutUint64(header[0:8], uint64(len(deltas)))
+	// Use 8 bytes for DBEntryLength (4), so header is still 16 bytes for future compatibility
+	binary.LittleEndian.PutUint64(header[8:16], uint64(DBEntryLength))
+
 	if _, err := f.Write(header[:]); err != nil {
-		f.Close()
 		return err
 	}
 
+	// Each delta record is: HintSetID (8 bytes) + IsBackupSet (8 bytes) + Delta (32 bytes = 4 * uint64)
+	// Total size: 8 + 8 + 32 = 48 bytes
+	var buf [48]byte
+
 	for _, delta := range deltas {
-		var buf [24]byte
 		binary.LittleEndian.PutUint64(buf[0:8], delta.HintSetID)
 		if delta.IsBackupSet {
 			binary.LittleEndian.PutUint64(buf[8:16], 1)
+		} else {
+			binary.LittleEndian.PutUint64(buf[8:16], 0)
 		}
-		binary.LittleEndian.PutUint64(buf[16:24], delta.Delta[0])
+		// Write the 4 uint64 words of the DBEntry
+		for i := 0; i < DBEntryLength; i++ {
+			binary.LittleEndian.PutUint64(buf[16+i*8:16+(i+1)*8], delta.Delta[i])
+		}
 		if _, err := f.Write(buf[:]); err != nil {
-			f.Close()
 			return err
 		}
 	}
-	if err := f.Close(); err != nil {
+	// Ensure all data is written to disk before renaming
+	if err := f.Sync(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
