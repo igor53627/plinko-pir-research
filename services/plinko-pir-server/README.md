@@ -67,7 +67,7 @@ go run main.go
 ### Client Example (Go)
 
 ```go
-import "piano-pir-server/pkg/client"
+import "plinko-pir-server/pkg/client"
 
 // Initialize
 c := client.NewClient(dbSize, numHints, keyAlpha, keyBeta)

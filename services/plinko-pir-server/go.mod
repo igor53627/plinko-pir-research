@@ -1,3 +1,3 @@
-module piano-pir-server
+module plinko-pir-server
 
 go 1.21

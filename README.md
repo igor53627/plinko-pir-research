@@ -1,194 +1,57 @@
-# Plinko PIR Research Implementation
+# Plinko PIR Research
 
-> Private Information Retrieval using invertible Pseudorandom Functions (iPRF) based on the Plinko paper (EUROCRYPT 2025)
+**A complete, high-performance implementation of the Plinko Single-Server PIR protocol with efficient updates.**
 
-## Overview
+This project implements a privacy-preserving system for querying Ethereum account balances. It allows clients to retrieve data from a server without revealing *which* address they are interested in, while supporting real-time database updates—a critical improvement over previous PIR schemes.
 
-Plinko is a single-server Private Information Retrieval (PIR) protocol with efficient updates. This implementation provides a production-ready system for private blockchain state queries.
+## 📚 Academic Context
 
-**Key Features:**
-- **Privacy-Preserving**: Query blockchain state without revealing query contents
-- **High Performance**: O(log m + k) query complexity with iPRF inverse (m = range size, k = result set size)
-- **Efficient Updates**: Incremental state updates without full reconstruction
-- **Multi-Language**: Go (production) and Python (reference) implementations
+**Plinko** is a state-of-the-art Single-Server Private Information Retrieval (PIR) scheme. Its key innovation is the use of **Invertible Pseudorandom Functions (iPRFs)** to achieve:
 
-## Quick Start
+1.  **O(1) Hint Search**: Clients can locate the "hint" (pre-processed parity) containing their target index in constant time.
+2.  **O(1) Updates**: When the database changes, clients can update their local hints in constant time without re-downloading the entire dataset.
+3.  **Information-Theoretic Privacy**: The server sees only pseudorandom queries and cannot distinguish the target index from any other.
 
-### Docker Compose (Fastest - 5 minutes)
+This implementation focuses on the "Warm Tier" of Ethereum state (~8.4M active accounts), demonstrating that privacy is practical at scale.
 
-```bash
-git clone https://github.com/igor53627/plinko-pir-research.git
-cd plinko-pir-research
+**Dataset**: The current deployment uses a snapshot of **5,575,868 real Ethereum addresses** (non-zero balances) from the Ethereum mainnet.
 
-# Start all services
-make build && make start
+## 🏗️ Architecture
 
-# Access the demo wallet
-open http://localhost:5173
-```
+The system is composed of three main services:
 
-**What you get:**
-- Rabby wallet fork with "Privacy Mode" toggle
-- 1,000 test accounts with balances
-- Live Plinko PIR decoding visualization
-- Real-time delta updates every 12 seconds
+### 1. Plinko PIR Server (`services/plinko-pir-server`)
+*   **Role**: The read-path server.
+*   **Function**: Stores the database and answers PIR queries.
+*   **Key Tech**: Implements the server-side of the Plinko protocol. It expands client PRF keys into pseudorandom sets and computes parities.
+*   **Privacy**: Does not know which index the client is querying.
 
-## Architecture
+### 2. Plinko Update Service (`services/plinko-update-service`)
+*   **Role**: The write-path service.
+*   **Function**: Monitors the Ethereum blockchain, detects balance changes, and publishes incremental "delta" files.
+*   **Key Tech**: Uses a cached iPRF mapping to generate updates in **~24μs** per block (O(1) per entry).
+*   **Output**: Stream of XOR deltas that clients download to stay in sync.
 
-```
-┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  Wallet Client  │ ───▶ │  PIR Server      │ ───▶ │  State Syncer   │
-│  (Privacy Mode) │ ◀─── │  (Query Handler) │ ◀─── │  (iPRF Updates) │
-└─────────────────┘      └──────────────────┘      └─────────────────┘
-                                                            │
-                                                            ▼
-                                                    ┌───────────────┐
-                                                    │ Ethereum Node │
-                                                    └───────────────┘
-```
+### 3. Client Library (`services/plinko-pir-server/pkg/client`)
+*   **Role**: The logic running in the user's wallet/application.
+*   **Function**:
+    *   **Offline**: Generates compact hints from the database stream.
+    *   **Online**: Generates privacy-preserving queries using `iPRF.Inverse`.
+    *   **Updates**: Applies deltas to local hints in O(1) time.
+    *   **Management**: Handles primary and backup hints to support multiple queries.
 
-### Core Components
-
-| Service | Purpose | Technology |
-|---------|---------|------------|
-| **eth-mock** | Simulated Ethereum node | Anvil (Foundry) |
-| **plinko-update-service** | Monitors blocks, generates deltas | Go + WebSocket |
-| **state-syncer** | Streams Hypersync blocks → snapshots/deltas | Go + Hypersync RPC |
-| **plinko-pir-server** | Handles PIR queries | Plinko protocol |
-| **cdn** | Distributes snapshot packages/deltas + proxies IPFS | Nginx / CloudFlare R2 |
-| **rabby-wallet** | Privacy-enhanced wallet UI | React + Vite |
-| **ipfs** | Local Kubo daemon (pin snapshots) | ipfs/kubo |
-
-## Performance
-
-**iPRF Inverse (Production):**
-- Domain size: 5.6M accounts
-- Range size: 1024 bins
-- Inverse time: **60µs** (O(log m + k))
-- Speedup: **1046× faster** than brute force
-
-**TablePRP:**
-- Forward/Inverse: **O(1)** with 0.54ns per operation
-- Memory: 16 bytes per element (~90MB for 5.6M)
-
-**Plinko Update Performance:**
-```
-Traditional PIR (SimplePIR):
-  Update 2,000 accounts: 1,875ms (database regeneration)
-
-Plinko PIR:
-  Update 2,000 accounts: 23.75ms (XOR deltas)
-
-Speedup: 79× faster ⚡
-```
-
-This makes Plinko the **first PIR system viable for real-time blockchain synchronization** (12-second Ethereum blocks).
-
-## Testing
-
-### Go Tests
-
-```bash
-cd services/state-syncer
-go test -v ./...
-# 87/87 tests passing (100%)
-```
-
-### Python Tests
-
-```bash
-cd plinko-reference
-python3 test_iprf_simple.py
-# 10/10 tests passing (100%)
-```
-
-## Research Findings
-
-Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
-
-- **eth_getBalance**: ✅ Production viable (5.6M addresses, 5ms queries, $0.09-0.14/user/month)
-- **eth_getLogs (Per-User)**: ✅ Highly viable (30K logs/user, 7.7 MB database)
-- **eth_getLogs (Rolling Window)**: ✅ Feasible (50K blocks, 6.4-51 GB with compression)
-- **eth_call**: ❌ Not viable (storage explosion: 10B+ slots)
-
-**Key Innovation**: First PIR system achieving real-time blockchain sync (79× faster updates than SimplePIR)
-
-**[View detailed research findings →](research/FINDINGS.md)**
-
-## Documentation
-
-- **[Research Findings](research/FINDINGS.md)**: Comprehensive analysis, innovations, and use cases
-- **[API Reference](docs/API_REFERENCE.md)**: Complete API documentation for all services
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**: Common issues and debugging
-- **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment instructions
-- **[Development Guide](DEVELOPMENT.md)**: Detailed development setup and contribution guide
-- **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
-- **[State Syncer README](services/state-syncer/README.md)**: iPRF implementation details
-- **[Python Implementation](plinko-reference/IPRF_IMPLEMENTATION.md)**: Python reference guide
-
-## Research Paper
-
-Implementation based on:
-> **Plinko: Single-Server PIR with Efficient Updates via Invertible PRFs**
-> Alexander Hoover, Sarvar Patel, Giuseppe Persiano, Kevin Yeo
-> EUROCRYPT 2025
-> [eprint.iacr.org/2024/318](https://eprint.iacr.org/2024/318)
-
-Paper included: [`docs/research/plinko-pir-paper.pdf`](docs/research/plinko-pir-paper.pdf)
-
-## Deployment
-
-Plinko PIR ships as a Docker Compose reference stack:
-
-```bash
-make build && make start    # builds services + starts docker compose
-make logs                   # tail logs per service
-make clean                  # tear down containers + volumes
-```
-
-**Resources**: 4 GB RAM, 2 CPU cores
-
-### Remote Deployment
-
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the fully scripted Vultr deployment workflow powered by `scripts/vultr-deploy.sh`.
-
-### Preparing Canonical Database
-
-Production datasets arrive as Parquet diffs. Convert them into `database.bin` + `address-mapping.bin`:
-
-```bash
-# 1. Copy raw diffs from reth-onion-dev
-rsync -avz reth-onion-dev:~/plinko-balances/balance_diffs_blocks-*.parquet raw_balances/
-
-# 2. Build the artifacts (writes into ./data/)
-python3 scripts/build_database_from_parquet.py --input raw_balances --output data
-```
-
-## Development
-
-For detailed development instructions, see [DEVELOPMENT.md](DEVELOPMENT.md).
+## 🚀 Quick Start
 
 ### Prerequisites
+*   Docker & Docker Compose
+*   Go 1.21+ (for local development)
+
+### Running the Full Stack
+The easiest way to run the system (Server, Update Service, Mock Ethereum Node) is via Docker Compose:
 
 ```bash
-# Docker & Docker Compose
-docker --version  # >= 20.10
-docker compose version  # >= 2.0
-```
-
-### Build and Test
-
-```bash
-# Clone repository
-git clone https://github.com/igor53627/plinko-pir-research.git
-cd plinko-pir-research
-
-# Start services
-make build
+# Build and start all services
 make start
-
-# Run tests
-make test
 
 # View logs
 make logs
@@ -197,17 +60,57 @@ make logs
 make stop
 ```
 
-## License
+This will spin up:
+*   **Anvil**: A simulated Ethereum blockchain.
+*   **Plinko Update Service**: Generating deltas from the blockchain.
+*   **Plinko PIR Server**: Ready to answer queries.
+*   **CDN Mock**: Serving snapshots and deltas.
 
-MIT License - see [LICENSE](LICENSE) file
+### Running Tests
+We have comprehensive test suites covering cryptographic primitives, protocol logic, and system integration.
 
-## Contact & Links
+```bash
+# Run all tests
+make test
 
-- **GitHub**: https://github.com/igor53627/plinko-pir-research
-- **Plinko Paper**: https://eprint.iacr.org/2024/318
-- **Plinko Summary**: https://www.kimi.com/share/19a6fcb1-3f92-8c58-8000-0000f106bbd7
-- **Issues**: https://github.com/igor53627/plinko-pir-research/issues
+# Run specific component tests
+cd services/plinko-pir-server
+go test ./pkg/iprf/...   # Test iPRF primitives
+go test ./pkg/client/... # Test Client logic
+```
+
+## 📂 Project Structure
+
+```
+.
+├── services/
+│   ├── plinko-pir-server/      # Main PIR Server & Client Library
+│   │   ├── pkg/iprf/           # Core iPRF implementation (PMNS + PRP)
+│   │   ├── pkg/client/         # Client-side logic (HintInit, Query, Update)
+│   │   └── cmd/server/         # Server entrypoint
+│   └── plinko-update-service/  # Update generation service
+├── docs/                       # Research documentation
+└── scripts/                    # Helper scripts for build/test
+```
+
+## 🛠️ Key Implementation Details
+
+### Invertible PRF (iPRF)
+Located in `services/plinko-pir-server/pkg/iprf`.
+*   **PMNS**: Pseudorandom Multinomial Sampler using a tree-based construction.
+*   **PRP**: Small-Domain Pseudorandom Permutation using a generalized Feistel network with cycle-walking.
+*   **Composition**: `F(x) = S(P(x))` and `F^-1(y) = P^-1(S^-1(y))`.
+
+### Efficient Updates
+Located in `services/plinko-pir-server/pkg/client/update.go`.
+*   Clients use `iPRF.Forward(index)` to find the *exact* hint affected by a database change.
+*   They XOR the delta into that hint's parity.
+*   This avoids the O(√n) cost of scanning all hints or re-downloading data.
+
+## 📄 References
+
+*   **Plinko: Single-Server PIR with Efficient Updates** (ePrint 2024/318)
+*   **Piano: Extremely Simple, Single-Server PIR** (ePrint 2023/452)
 
 ---
-
-*Bringing information-theoretic privacy to Ethereum, one query at a time.* 🔐
+*Part of the Privacy & Scaling Explorations (PSE) research.*

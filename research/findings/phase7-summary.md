@@ -587,7 +587,7 @@ What is your primary constraint?
 
 **Status**: This research project delivered a complete Plinko PIR implementation:
 - Go implementation with iPRF inverse (services/state-syncer/)
-- Python reference implementation (plinko-reference/)
+- Python reference implementation (/)
 - Docker Compose deployment stack
 - 100% test coverage (87 Go tests + 10 Python tests)
 - See: https://github.com/igor53627/plinko-pir-research
