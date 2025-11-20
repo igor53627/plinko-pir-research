@@ -82,6 +82,7 @@ services/state-syncer/state-syncer
 services/plinko-pir-server/pir-server
 services/plinko-pir-server/piano-pir-server
 tools/plinko-bench/plinko-bench
+tools/erigon-adapter/erigon-adapter
 *.exe
 **/target/
 
