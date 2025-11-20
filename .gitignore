@@ -80,7 +80,10 @@ final_test_run.txt
 # Build artifacts
 services/state-syncer/state-syncer
 services/plinko-pir-server/pir-server
+services/plinko-pir-server/piano-pir-server
+tools/plinko-bench/plinko-bench
 *.exe
+**/target/
 
 # Development tools (IDE-specific, not for production repo)
 .claude/

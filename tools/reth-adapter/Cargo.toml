@@ -1,0 +1,23 @@
+[package]
+name = "reth-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+eyre = "0.6"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+rayon = "1.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Reth dependencies
+reth-db = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.0", features = ["mdbx"] }
+reth-primitives = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.0" }
+reth-libmdbx = { git = "https://github.com/paradigmxyz/reth", tag = "v1.1.0" }
+alloy-primitives = "0.8" 
+
+[profile.release]
+lto = "thin"
+strip = true
