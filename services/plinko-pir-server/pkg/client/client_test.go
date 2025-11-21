@@ -4,12 +4,24 @@ import (
 	"testing"
 )
 
+func newDeterministicRandSource() func(max uint64) uint64 {
+	var counter uint64
+	return func(max uint64) uint64 {
+		if max == 0 {
+			return 0
+		}
+		v := counter % max
+		counter++
+		return v
+	}
+}
+
 func TestClientEndToEnd(t *testing.T) {
 	// 1. Setup Mock Database
 	n := uint64(1000)
-	db := make([]uint64, n)
+	db := make([][4]uint64, n)
 	for i := uint64(0); i < n; i++ {
-		db[i] = i * 100 // Some value
+		db[i][0] = i * 100 // Some value
 	}
 
 	// 2. Initialize Client
@@ -19,6 +31,7 @@ func TestClientEndToEnd(t *testing.T) {
 	keyBeta[0] = 1
 
 	c := NewClient(n, m, keyAlpha, keyBeta)
+	c.randSource = newDeterministicRandSource()
 
 	// 3. Offline Phase: HintInit
 	// Stream the database
@@ -41,38 +54,38 @@ func TestClientEndToEnd(t *testing.T) {
 	targetIndex := uint64(42)
 	expectedValue := db[targetIndex]
 
-	req, hint, err := c.Query(targetIndex)
-	if err != nil {
-		t.Fatalf("Query failed: %v", err)
+	indices, hint, ok := c.Query(targetIndex)
+	if !ok {
+		t.Fatalf("Query failed: no hint found")
 	}
 
-	if req == nil {
+	if indices == nil {
 		t.Fatalf("Query returned nil request")
 	}
 
 	// 5. Simulate Server
 	// Server computes parity of indices in req.Indices
-	serverParity := uint64(0)
-	for _, idx := range req.Indices {
+	var serverParity [4]uint64
+	for _, idx := range indices {
 		if idx >= n {
 			t.Fatalf("Client requested out of bounds index: %d", idx)
 		}
-		serverParity ^= db[idx]
+		serverParity[0] ^= db[idx][0]
 	}
 
 	// 6. Reconstruction
 	val := c.Reconstruct(serverParity, hint)
 
-	if val != expectedValue {
-		t.Errorf("Reconstruction failed: got %d, want %d", val, expectedValue)
+	if val[0] != expectedValue[0] {
+		t.Errorf("Reconstruction failed: got %d, want %d", val[0], expectedValue[0])
 	}
 }
 
 func TestClientBackupHints(t *testing.T) {
 	n := uint64(100)
-	db := make([]uint64, n)
+	db := make([][4]uint64, n)
 	for i := uint64(0); i < n; i++ {
-		db[i] = uint64(i)
+		db[i][0] = uint64(i)
 	}
 
 	m := uint64(10)
@@ -80,6 +93,7 @@ func TestClientBackupHints(t *testing.T) {
 	keyBeta := make([]byte, 16)
 
 	c := NewClient(n, m, keyAlpha, keyBeta)
+	c.randSource = newDeterministicRandSource()
 
 	// Helper to reset stream
 	getStream := func() func() (DBEntry, bool) {
@@ -105,29 +119,29 @@ func TestClientBackupHints(t *testing.T) {
 	target := uint64(55)
 
 	// 1. First Query (Primary)
-	req1, hint1, err := c.Query(target)
-	if err != nil {
-		t.Fatalf("First query failed: %v", err)
+	indices1, hint1, ok := c.Query(target)
+	if !ok {
+		t.Fatalf("First query failed: no hint found")
 	}
 	if hint1.Used != true {
 		t.Errorf("Primary hint should be marked used")
 	}
 
 	// Verify result 1
-	parity1 := uint64(0)
-	for _, idx := range req1.Indices {
-		parity1 ^= db[idx]
+	var parity1 [4]uint64
+	for _, idx := range indices1 {
+		parity1[0] ^= db[idx][0]
 	}
 	val1 := c.Reconstruct(parity1, hint1)
-	if val1 != db[target] {
-		t.Errorf("First query result wrong: got %d, want %d", val1, db[target])
+	if val1[0] != db[target][0] {
+		t.Errorf("First query result wrong: got %d, want %d", val1[0], db[target][0])
 	}
 
 	// 2. Second Query (Backup)
 	// Should use backup hint because primary is used
-	req2, hint2, err := c.Query(target)
-	if err != nil {
-		t.Fatalf("Second query failed (backup not found?): %v", err)
+	indices2, hint2, ok := c.Query(target)
+	if !ok {
+		t.Fatalf("Second query failed (backup not found?)")
 	}
 
 	// Verify it's a backup hint (Indices should be populated)
@@ -139,21 +153,21 @@ func TestClientBackupHints(t *testing.T) {
 	}
 
 	// Verify result 2
-	parity2 := uint64(0)
-	for _, idx := range req2.Indices {
-		parity2 ^= db[idx]
+	var parity2 [4]uint64
+	for _, idx := range indices2 {
+		parity2[0] ^= db[idx][0]
 	}
 	val2 := c.Reconstruct(parity2, hint2)
-	if val2 != db[target] {
-		t.Errorf("Second query result wrong: got %d, want %d", val2, db[target])
+	if val2[0] != db[target][0] {
+		t.Errorf("Second query result wrong: got %d, want %d", val2[0], db[target][0])
 	}
 }
 
 func TestClientUpdate(t *testing.T) {
 	n := uint64(100)
-	db := make([]uint64, n)
+	db := make([][4]uint64, n)
 	for i := uint64(0); i < n; i++ {
-		db[i] = uint64(i)
+		db[i][0] = uint64(i)
 	}
 
 	m := uint64(10)
@@ -178,31 +192,32 @@ func TestClientUpdate(t *testing.T) {
 	c.HintInit(getStream())
 
 	target := uint64(42)
-	oldValue := db[target]
+	oldValue := db[target][0]
 	newValue := uint64(999)
 
 	// 1. Verify initial query works
 	// We don't consume the hint yet, or we reset?
 	// Let's just query.
-	req1, hint1, err := c.Query(target)
-	if err != nil {
-		t.Fatalf("Initial query failed: %v", err)
+	indices1, hint1, ok := c.Query(target)
+	if !ok {
+		t.Fatalf("Initial query failed: no hint found")
 	}
 
 	// Compute parity 1
-	parity1 := uint64(0)
-	for _, idx := range req1.Indices {
-		parity1 ^= db[idx]
+	var parity1 [4]uint64
+	for _, idx := range indices1 {
+		parity1[0] ^= db[idx][0]
 	}
 	val1 := c.Reconstruct(parity1, hint1)
-	if val1 != oldValue {
-		t.Errorf("Initial value wrong: got %d, want %d", val1, oldValue)
+	if val1[0] != oldValue {
+		t.Errorf("Initial value wrong: got %d, want %d", val1[0], oldValue)
 	}
 
 	// 2. Perform Update
 	// Update DB
-	db[target] = newValue
-	delta := oldValue ^ newValue
+	db[target][0] = newValue
+	var delta [4]uint64
+	delta[0] = oldValue ^ newValue
 
 	// Update Client Hints
 	c.UpdateHint(target, delta)
@@ -218,32 +233,33 @@ func TestClientUpdate(t *testing.T) {
 	// So we should init backup hints BEFORE update.
 
 	// Reset and start over for clean test
-	db[target] = oldValue // Reset DB
+	db[target][0] = oldValue // Reset DB
 	c = NewClient(n, m, keyAlpha, keyBeta)
+	c.randSource = newDeterministicRandSource()
 	c.HintInit(getStream())
 	c.InitBackupHints(50, 10, getStream())
 
 	// Now update
-	db[target] = newValue
-	delta = oldValue ^ newValue
+	db[target][0] = newValue
+	delta[0] = oldValue ^ newValue
 	c.UpdateHint(target, delta)
 
 	// Query again (should use primary hint if not used, or backup)
 	// Since we created a NEW client, primary hint is unused.
 	// It should reflect the update.
-	req2, hint2, err := c.Query(target)
-	if err != nil {
-		t.Fatalf("Post-update query failed: %v", err)
+	indices2, hint2, ok := c.Query(target)
+	if !ok {
+		t.Fatalf("Post-update query failed: no hint found")
 	}
 
 	// Compute parity 2 (using NEW DB)
-	parity2 := uint64(0)
-	for _, idx := range req2.Indices {
-		parity2 ^= db[idx]
+	var parity2 [4]uint64
+	for _, idx := range indices2 {
+		parity2[0] ^= db[idx][0]
 	}
 	val2 := c.Reconstruct(parity2, hint2)
-	if val2 != newValue {
-		t.Errorf("Post-update value wrong: got %d, want %d", val2, newValue)
+	if val2[0] != newValue {
+		t.Errorf("Post-update value wrong: got %d, want %d", val2[0], newValue)
 	}
 
 	// 4. Verify Backup Hint Update
@@ -251,9 +267,9 @@ func TestClientUpdate(t *testing.T) {
 	// (hint2 was primary and is now used)
 
 	// Query again -> should use backup hint
-	req3, hint3, err := c.Query(target)
-	if err != nil {
-		t.Fatalf("Backup query failed: %v", err)
+	indices3, hint3, ok := c.Query(target)
+	if !ok {
+		t.Fatalf("Backup query failed: no hint found")
 	}
 
 	// Verify it's backup
@@ -262,12 +278,55 @@ func TestClientUpdate(t *testing.T) {
 	}
 
 	// Compute parity 3
-	parity3 := uint64(0)
-	for _, idx := range req3.Indices {
-		parity3 ^= db[idx]
+	var parity3 [4]uint64
+	for _, idx := range indices3 {
+		parity3[0] ^= db[idx][0]
 	}
 	val3 := c.Reconstruct(parity3, hint3)
-	if val3 != newValue {
-		t.Errorf("Backup hint value wrong after update: got %d, want %d", val3, newValue)
+	if val3[0] != newValue {
+		t.Errorf("Backup hint value wrong after update: got %d, want %d", val3[0], newValue)
+	}
+}
+
+func TestBackupHintsSanity(t *testing.T) {
+	n := uint64(100)
+	db := make([][4]uint64, n)
+	for i := uint64(0); i < n; i++ {
+		db[i][0] = uint64(i)
+	}
+
+	m := uint64(10)
+	keyAlpha := make([]byte, 16)
+	keyBeta := make([]byte, 16)
+
+	c := NewClient(n, m, keyAlpha, keyBeta)
+	c.randSource = newDeterministicRandSource()
+
+	getStream := func() func() (DBEntry, bool) {
+		iter := 0
+		return func() (DBEntry, bool) {
+			if iter >= int(n) {
+				return DBEntry{}, false
+			}
+			entry := DBEntry{Index: uint64(iter), Value: db[iter]}
+			iter++
+			return entry, true
+		}
+	}
+
+	c.HintInit(getStream())
+	c.InitBackupHints(20, 10, getStream())
+
+	for _, hint := range c.backupHints {
+		seen := make(map[uint64]bool)
+		for _, idx := range hint.Indices {
+			if idx >= n {
+				t.Errorf("backup hint index out of range: got %d, n=%d", idx, n)
+			}
+			if seen[idx] {
+				t.Errorf("duplicate index %d within a single backup hint", idx)
+			}
+			seen[idx] = true
+		}
 	}
 }

@@ -1,7 +1,8 @@
 package client
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"encoding/binary"
 	"plinko-pir-server/pkg/iprf"
 )
 
@@ -31,17 +32,40 @@ type Client struct {
 	// Keys
 	keyAlpha []byte // Key for iPRF
 	keyBeta  []byte // Key for PMNS (part of iPRF)
+
+	randSource func(max uint64) uint64
 }
 
 // NewClient creates a new client
 func NewClient(n, m uint64, keyAlpha, keyBeta []byte) *Client {
-	return &Client{
+	c := &Client{
 		iprf:     iprf.New(keyAlpha, keyBeta, n, m),
 		hints:    make([]Hint, m),
 		n:        n,
 		m:        m,
 		keyAlpha: keyAlpha,
 		keyBeta:  keyBeta,
+	}
+	c.randSource = defaultRandSource
+	return c
+}
+
+func defaultRandSource(max uint64) uint64 {
+	if max == 0 {
+		return 0
+	}
+
+	limit := ^uint64(0) - (^uint64(0) % max)
+
+	for {
+		var b [8]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			panic(err)
+		}
+		v := binary.LittleEndian.Uint64(b[:])
+		if v < limit {
+			return v % max
+		}
 	}
 }
 
@@ -92,15 +116,13 @@ func (c *Client) InitBackupHints(count int, setSize int, dbStream func() (DBEntr
 
 	// Generate random sets for backup hints
 	// We use a fixed seed for reproducibility in this PoC
-	rng := rand.New(rand.NewSource(42))
-
 	for i := 0; i < count; i++ {
 		// Generate a random set of indices
 		indices := make([]uint64, setSize)
 		seen := make(map[uint64]bool)
 		for j := 0; j < setSize; j++ {
 			for {
-				idx := uint64(rng.Int63n(int64(c.n)))
+				idx := c.randSource(c.n)
 				if !seen[idx] {
 					seen[idx] = true
 					indices[j] = idx
