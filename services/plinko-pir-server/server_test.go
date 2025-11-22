@@ -64,14 +64,14 @@ func TestLoadServerFromDatabase(t *testing.T) {
 	}
 
 	totalEntries := expectedChunk * expectedSet
-	// server.database size is totalEntries * DBEntryLength (4)
-	if uint64(len(server.database)) != totalEntries*4 {
-		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries*4)
+	// server.database stores totalEntries * DBEntryLength uint64 words.
+	if uint64(len(server.database)) != totalEntries*DBEntryLength {
+		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries*DBEntryLength)
 	}
 
-	// Check padding entries (starting after the 10 valid entries)
-	// Valid data ends at index 10 * 4 = 40.
-	for i := 40; i < len(server.database); i++ {
+	// Check padding entries (starting after the valid entries)
+	validWords := int(server.dbSize) * DBEntryLength
+	for i := validWords; i < len(server.database); i++ {
 		if server.database[i] != 0 {
 			t.Fatalf("padding entry word %d expected zero got %d", i, server.database[i])
 		}

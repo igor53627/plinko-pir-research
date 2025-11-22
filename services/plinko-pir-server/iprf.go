@@ -43,6 +43,16 @@ func (iprf *IPRF) Inverse(y uint64) []uint64 {
 	return results
 }
 
+// DomainSize returns the size of the domain [0, n-1]
+func (iprf *IPRF) DomainSize() uint64 {
+	return iprf.prp.n
+}
+
+// RangeSize returns the size of the range [0, m-1]
+func (iprf *IPRF) RangeSize() uint64 {
+	return iprf.pmns.m
+}
+
 // --- Pseudorandom Permutation (PRP) ---
 
 // FeistelPRP implements a format-preserving encryption using a Feistel network
@@ -51,7 +61,6 @@ type FeistelPRP struct {
 	block cipher.Block
 	n     uint64
 	bits  uint
-	mask  uint64
 }
 
 func NewFeistelPRP(key [16]byte, n uint64) *FeistelPRP {
@@ -82,7 +91,6 @@ func NewFeistelPRP(key [16]byte, n uint64) *FeistelPRP {
 		block: block,
 		n:     n,
 		bits:  bits,
-		mask:  (uint64(1) << bits) - 1,
 	}
 }
 
@@ -173,6 +181,13 @@ type PMNS struct {
 }
 
 func NewPMNS(key [16]byte, n, m uint64) *PMNS {
+	if n == 0 || m == 0 {
+		panic("PMNS requires n > 0 and m > 0")
+	}
+	if m&(m-1) != 0 {
+		panic("PMNS currently assumes m is a power of two for Plinko parameters")
+	}
+
 	block, err := aes.NewCipher(key[:])
 	if err != nil {
 		panic(err)

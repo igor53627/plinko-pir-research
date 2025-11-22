@@ -26,8 +26,8 @@ func NewPRSet(key PrfKey128, setSize, chunkSize uint64) *PRSet {
 // Returns: array of setSize indices, one per chunk
 func (prs *PRSet) Expand() []uint64 {
 	// The setSize is implicit in the IPRF configuration
-	setSize := prs.iprf.prp.n
-	chunkSize := prs.iprf.pmns.m
+	setSize := prs.iprf.DomainSize()
+	chunkSize := prs.iprf.RangeSize()
 	
 	indices := make([]uint64, setSize)
 
