@@ -1,4 +1,4 @@
-# Multi-stage build for Piano PIR Database Generator
+# Multi-stage build for Plinko PIR Database Generator
 # Stage 1: Build Go binary
 FROM golang:1.21-alpine AS builder
 

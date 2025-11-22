@@ -89,7 +89,7 @@ echo "-----------------------"
 
 test_start "PIR Server logs contain NO addresses"
 # Check last 100 lines of PIR server logs for Ethereum addresses (0x...)
-if docker logs piano-pir-server 2>&1 | tail -100 | grep -i "0x[0-9a-f]\{40\}" > /dev/null; then
+if docker logs plinko-pir-server 2>&1 | tail -100 | grep -i "0x[0-9a-f]\{40\}" > /dev/null; then
     test_fail "PRIVACY LEAK DETECTED! Server logs contain Ethereum addresses"
 else
     test_pass
@@ -97,7 +97,7 @@ fi
 
 test_start "Plinko logs contain NO specific indices"
 # Plinko should log aggregate stats, not individual indices
-if docker logs piano-pir-plinko-updates 2>&1 | tail -100 | grep -E "index [0-9]+" > /dev/null; then
+if docker logs plinko-pir-plinko-updates 2>&1 | tail -100 | grep -E "index [0-9]+" > /dev/null; then
     test_warn "Plinko may be logging individual indices"
 else
     test_pass
@@ -251,8 +251,8 @@ else
     echo -e "${RED}✗ SOME TESTS FAILED${NC}"
     echo ""
     echo "Please check the failures above and review service logs:"
-    echo "  docker-compose logs piano-pir-server"
-    echo "  docker-compose logs piano-pir-plinko-updates"
+    echo "  docker-compose logs plinko-pir-server"
+    echo "  docker-compose logs plinko-pir-plinko-updates"
     echo ""
     exit 1
 fi

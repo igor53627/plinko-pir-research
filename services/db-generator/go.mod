@@ -1,4 +1,4 @@
-module piano-pir-db-generator
+module plinko-pir-db-generator
 
 go 1.21
 

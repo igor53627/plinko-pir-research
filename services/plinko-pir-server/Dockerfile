@@ -1,4 +1,4 @@
-# Multi-stage build for Piano PIR Server
+# Multi-stage build for Plinko PIR Server
 # Stage 1: Build Go binary
 FROM golang:1.21-alpine AS builder
 

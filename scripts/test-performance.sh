@@ -129,7 +129,7 @@ echo "-----------------------"
 
 test_start "Plinko update latency (<${MAX_UPDATE_LATENCY_US}μs per block)"
 # Check Plinko logs for "Block processed" messages with timing
-RECENT_BLOCK=$(docker logs piano-pir-plinko-updates 2>&1 | grep "Block processed" | tail -1)
+RECENT_BLOCK=$(docker logs plinko-pir-plinko-updates 2>&1 | grep "Block processed" | tail -1)
 
 if [ -z "$RECENT_BLOCK" ]; then
     test_info "No blocks processed yet, skipping update latency test"

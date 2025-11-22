@@ -16,7 +16,7 @@ This document provides complete specifications to build a working Proof of Conce
 - ✅ Complete flow: Ethereum state → PIR database → Hint → Client query → Response
 - ✅ **Plinko real-time incremental updates** (23.75 μs per 2,000 accounts - no full regeneration!)
 - ✅ Integrated wallet (Ambire fork) with "Privacy Mode" toggle
-- ✅ ~5ms query latency (Piano PIR)
+- ✅ ~5ms query latency (Plinko PIR)
 
 **Plinko Update Performance** (Validated in Research):
 - **23.75 microseconds** per 2,000-account Ethereum block update
@@ -59,7 +59,7 @@ This document provides complete specifications to build a working Proof of Conce
 │         ▼                                                          │
 │  ┌───────────────────────────────────────────────────────────┐   │
 │  │  SERVICE 7: Ambire Wallet (React + Vite)                  │   │
-│  │  - PianoPIRProvider integration                           │   │
+│  │  - PlinkoPIRProvider integration                           │   │
 │  │  - Plinko delta application                               │   │
 │  │  - Privacy Mode UI                                        │   │
 │  │  Port: 5173                                               │   │
@@ -69,7 +69,7 @@ This document provides complete specifications to build a working Proof of Conce
 │       ▼                    ▼              ▼              ▼        │
 │  ┌─────────────┐    ┌─────────────┐ ┌─────────────┐  ┌────────┐ │
 │  │ SERVICE 5:  │    │ SERVICE 6:  │ │             │  │Ethereum│ │
-│  │ Piano PIR   │    │ CDN Mock    │ │             │  │  RPC   │ │
+│  │ Plinko PIR   │    │ CDN Mock    │ │             │  │  RPC   │ │
 │  │ Server (Go) │    │ (nginx)     │ │             │  │(Public)│ │
 │  │ Port: 3000  │    │ Port: 8080  │ │             │  │        │ │
 │  └─────┬───────┘    └─────────────┘ │             │  └────────┘ │
@@ -90,8 +90,8 @@ This document provides complete specifications to build a working Proof of Conce
 │         │                      │                   │             │
 │  ┌──────┴───────┐   ┌──────────┴──────┐   ┌───────┴────────┐   │
 │  │ SERVICE 2:   │   │ SERVICE 3:      │   │ SERVICE 4:     │   │
-│  │ DB Generator │   │ Piano Hint Gen  │   │ Plinko Update  │   │
-│  │ (Python)     │   │ (Go - Piano PIR)│   │ Service (Go)   │   │
+│  │ DB Generator │   │ Plinko Hint Gen  │   │ Plinko Update  │   │
+│  │ (Python)     │   │ (Go - Plinko PIR)│   │ Service (Go)   │   │
 │  │ (init only)  │   │ (init only)     │   │ (always runs)  │   │
 │  └──────┬───────┘   └─────────────────┘   └────────────────┘   │
 │         │                                                        │
@@ -113,11 +113,11 @@ This document provides complete specifications to build a working Proof of Conce
 |---------|---------|------------|------|
 | 1. Ethereum Mock | Provides test data (4,096 accounts) | Foundry Anvil | Always |
 | 2. DB Generator | Extracts state → database.bin | Python | Init only |
-| 3. Piano Hint Generator | database.bin → hint.bin | Go (Piano PIR) | Init only |
+| 3. Plinko Hint Generator | database.bin → hint.bin | Go (Plinko PIR) | Init only |
 | 4. Plinko Update Service | Real-time incremental updates | Go (Plinko) | Always |
-| 5. Piano PIR Server | Answers PIR queries | Go (Piano PIR) | Always |
+| 5. Plinko PIR Server | Answers PIR queries | Go (Plinko PIR) | Always |
 | 6. CDN Mock | Serves hint.bin + deltas | nginx | Always |
-| 7. Ambire Wallet | UI + PianoPIRProvider | React + Vite | Always |
+| 7. Ambire Wallet | UI + PlinkoPIRProvider | React + Vite | Always |
 
 ### 1.3 Data Flow
 
@@ -125,7 +125,7 @@ This document provides complete specifications to build a working Proof of Conce
 Initialization (once):
 1. Anvil starts with 4,096 pre-funded accounts
 2. DB Generator queries Anvil → creates database.bin (32 KB)
-3. Piano Hint Generator processes database.bin → creates hint.bin (~8 MB)
+3. Plinko Hint Generator processes database.bin → creates hint.bin (~8 MB)
 4. CDN Mock serves hint.bin
 5. Plinko Update Service starts monitoring Anvil blocks
 
@@ -133,11 +133,11 @@ Runtime (per query):
 1. User opens Ambire wallet, enables "Privacy Mode"
 2. Wallet downloads hint.bin from CDN Mock (8 MB, ~500ms)
 3. User views balance for address X
-4. Wallet generates Piano PIR query for address X
-5. Wallet sends query to Piano PIR Server
-6. Piano PIR Server computes response using database.bin + query
+4. Wallet generates Plinko PIR query for address X
+5. Wallet sends query to Plinko PIR Server
+6. Plinko PIR Server computes response using database.bin + query
 7. Wallet decrypts response → displays balance
-8. Privacy: Piano PIR Server never learned which address was queried
+8. Privacy: Plinko PIR Server never learned which address was queried
 
 Update Flow (per block, ~12 seconds):
 1. Anvil mines new block (changes ~100 accounts in PoC)
@@ -151,9 +151,9 @@ Update Flow (per block, ~12 seconds):
 
 ### 1.4 Key Differences from FrodoPIR PoC
 
-| Aspect | FrodoPIR PoC | Piano + Plinko PoC |
+| Aspect | FrodoPIR PoC | Plinko PIR PoC |
 |--------|--------------|-------------------|
-| **PIR Algorithm** | FrodoPIR (LWE-based) | Piano PIR (OWF-based) |
+| **PIR Algorithm** | FrodoPIR (LWE-based) | Plinko PIR (OWF-based) |
 | **Hint Size** | ~12 MB (2^12 DB) | ~8 MB (2^12 DB) |
 | **Query Latency** | ~100ms | ~5ms |
 | **Update Strategy** | Full regeneration (hourly) | Plinko incremental (real-time) |
@@ -168,7 +168,7 @@ Update Flow (per block, ~12 seconds):
 ## 2. Project Structure
 
 ```
-piano-pir-poc/
+plinko-pir-poc/
 ├── docker-compose.yml              # Orchestrates all services
 ├── .env.example                    # Environment variables template
 ├── README.md                       # Quick start guide
@@ -185,28 +185,28 @@ piano-pir-poc/
 │   │   ├── generate-db.py         # Main script
 │   │   └── config.json            # Database configuration
 │   │
-│   ├── piano-hint-generator/
+│   ├── plinko-hint-generator/
 │   │   ├── Dockerfile             # Multi-stage build (Go compile)
 │   │   ├── generate-hint.sh       # Wrapper script
-│   │   └── piano-pir/             # Piano PIR Go implementation
+│   │   └── plinko-pir/             # Plinko PIR Go implementation
 │   │       ├── server/
 │   │       │   └── server.go      # Hint generation logic
 │   │       └── util/
-│   │           └── util.go        # Piano PIR utilities
+│   │           └── util.go        # Plinko PIR utilities
 │   │
 │   ├── plinko-update-service/
 │   │   ├── Dockerfile
 │   │   ├── main.go                # Monitors Anvil, generates deltas
-│   │   └── piano-pir/             # Shared Piano PIR codebase
+│   │   └── plinko-pir/             # Shared Plinko PIR codebase
 │   │       ├── server/
 │   │       │   └── plinko.go      # Plinko update manager (COMPLETE)
 │   │       └── util/
 │   │           └── iprf.go        # Invertible PRF (COMPLETE)
 │   │
-│   ├── piano-pir-server/
+│   ├── plinko-pir-server/
 │   │   ├── Dockerfile
 │   │   ├── main.go                # gRPC server
-│   │   └── piano-pir/             # Shared Piano PIR codebase
+│   │   └── plinko-pir/             # Shared Plinko PIR codebase
 │   │
 │   ├── cdn-mock/
 │   │   ├── Dockerfile
@@ -217,12 +217,12 @@ piano-pir-poc/
 │       ├── .env.docker            # Docker-specific env vars
 │       ├── src/
 │       │   ├── providers/
-│       │   │   ├── PianoPIRProvider.js  # NEW: Custom provider
+│       │   │   ├── PlinkoPIRProvider.js  # NEW: Custom provider
 │       │   │   └── index.js             # Export provider
 │       │   ├── components/
 │       │   │   └── PrivacyMode.jsx      # NEW: UI toggle
 │       │   └── lib/
-│       │       ├── piano-pir-client.js  # NEW: Piano PIR client logic
+│       │       ├── plinko-pir-client.js  # NEW: Plinko PIR client logic
 │       │       └── plinko-client.js     # NEW: Plinko delta application
 │       └── vite.config.js               # Modified for Docker
 │
@@ -291,7 +291,7 @@ anvil \
 
 ### 3.2 Service 2: Database Generator
 
-**Purpose**: Extract state from Ethereum Mock → create Piano PIR database
+**Purpose**: Extract state from Ethereum Mock → create Plinko PIR database
 
 **Dockerfile** (`services/db-generator/Dockerfile`):
 ```dockerfile
@@ -321,7 +321,7 @@ eth-utils==2.0.0
 ```python
 #!/usr/bin/env python3
 """
-Generate Piano PIR database from Ethereum state
+Generate Plinko PIR database from Ethereum state
 Note: Simplified 8-byte entries for PoC (balance only)
 """
 import json
@@ -333,7 +333,7 @@ ETH_RPC = "http://eth-mock:8545"
 OUTPUT_DB = "/data/database.bin"
 OUTPUT_MAPPING = "/data/address-mapping.bin"
 NUM_ENTRIES = 4096  # 2^12
-ENTRY_SIZE = 8      # bytes (Piano PIR uses smaller entries than FrodoPIR)
+ENTRY_SIZE = 8      # bytes (Plinko PIR uses smaller entries than FrodoPIR)
 
 def main():
     print(f"Connecting to Ethereum node at {ETH_RPC}...")
@@ -357,14 +357,14 @@ def main():
     # Sort by address (deterministic ordering)
     accounts.sort(key=lambda x: x[0].lower())
 
-    print(f"Creating Piano PIR database with {len(accounts)} entries...")
+    print(f"Creating Plinko PIR database with {len(accounts)} entries...")
 
-    # Create database.bin (Piano PIR format)
+    # Create database.bin (Plinko PIR format)
     with open(OUTPUT_DB, 'wb') as db_file:
         for addr, balance in accounts:
             # Entry format (8 bytes):
             # 0-7: Balance (uint64, little-endian)
-            # Simplified for PoC - Piano PIR supports variable entry sizes
+            # Simplified for PoC - Plinko PIR supports variable entry sizes
 
             # Convert balance to uint64 (truncate if needed)
             balance_uint64 = min(balance, 2**64 - 1)
@@ -398,15 +398,15 @@ if __name__ == '__main__':
 
 ---
 
-### 3.3 Service 3: Piano Hint Generator
+### 3.3 Service 3: Plinko Hint Generator
 
-**Purpose**: Generate Piano PIR hints from database.bin
+**Purpose**: Generate Plinko PIR hints from database.bin
 
-**Dockerfile** (`services/piano-hint-generator/Dockerfile`):
+**Dockerfile** (`services/plinko-hint-generator/Dockerfile`):
 ```dockerfile
-# Multi-stage build: Compile Piano PIR, then generate hint
+# Multi-stage build: Compile Plinko PIR, then generate hint
 
-# Stage 1: Build Piano PIR Go implementation
+# Stage 1: Build Plinko PIR Go implementation
 FROM golang:1.21-alpine as builder
 
 WORKDIR /build
@@ -414,14 +414,14 @@ WORKDIR /build
 # Install dependencies
 RUN apk add --no-cache git build-base
 
-# Clone Piano PIR Go implementation
+# Clone Plinko PIR Go implementation
 # Use the completed implementation from research phase
-COPY piano-pir/ /build/piano-pir/
+COPY plinko-pir/ /build/plinko-pir/
 
-WORKDIR /build/piano-pir/server
+WORKDIR /build/plinko-pir/server
 
 # Build hint generation binary
-RUN go build -o piano-hint-gen .
+RUN go build -o plinko-hint-gen .
 
 # Stage 2: Runtime
 FROM alpine:latest
@@ -429,7 +429,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy compiled binary
-COPY --from=builder /build/piano-pir/server/piano-hint-gen /usr/local/bin/
+COPY --from=builder /build/plinko-pir/server/plinko-hint-gen /usr/local/bin/
 
 # Copy wrapper script
 COPY generate-hint.sh .
@@ -445,7 +445,7 @@ CMD ["./generate-hint.sh"]
 #!/bin/bash
 set -e
 
-echo "Generating Piano PIR hints..."
+echo "Generating Plinko PIR hints..."
 
 # Wait for database.bin to exist
 while [ ! -f /data/database.bin ]; do
@@ -457,17 +457,17 @@ done
 DATABASE="/data/database.bin"
 OUTPUT="/data/hint.bin"
 NUM_ENTRIES=4096        # 2^12
-ENTRY_SIZE=8            # bytes (Piano PIR simplified format)
+ENTRY_SIZE=8            # bytes (Plinko PIR simplified format)
 CHUNK_SIZE=64           # sqrt(4096) = 64
-SET_SIZE=1024           # Piano PIR parameter
+SET_SIZE=1024           # Plinko PIR parameter
 
 echo "Database: $DATABASE"
 echo "Entries: $NUM_ENTRIES"
 echo "Entry size: $ENTRY_SIZE bytes"
 echo "Chunk size: $CHUNK_SIZE"
 
-# Generate hint (Go binary from Piano PIR implementation)
-piano-hint-gen \
+# Generate hint (Go binary from Plinko PIR implementation)
+plinko-hint-gen \
   --database "$DATABASE" \
   --num-entries $NUM_ENTRIES \
   --entry-size $ENTRY_SIZE \
@@ -492,7 +492,7 @@ fi
 echo "✅ Hint generation complete"
 ```
 
-**Note**: The Piano PIR Go implementation is already complete in the research codebase at:
+**Note**: The Plinko PIR Go implementation is already complete in the research codebase at:
 - `/Users/user/pse/tor/research/frodopir-ethereum-rpc-analysis/src/piano-pir/`
 
 This can be copied directly into the PoC.
@@ -509,8 +509,8 @@ FROM golang:1.21-alpine
 
 WORKDIR /app
 
-# Copy Piano PIR implementation (includes Plinko)
-COPY piano-pir/ /app/piano-pir/
+# Copy Plinko PIR implementation (includes Plinko)
+COPY plinko-pir/ /app/plinko-pir/
 
 # Copy Plinko update service
 COPY main.go .
@@ -538,7 +538,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	pianopir "example.com/server"
+	plinkopir "example.com/server"
 	"example.com/util"
 )
 
@@ -576,13 +576,13 @@ func main() {
 		log.Fatalf("Failed to load database: %v", err)
 	}
 
-	// Create Piano PIR server instance
-	server := &pianopir.QueryServiceServer{
+	// Create Plinko PIR server instance
+	server := &plinkopir.QueryServiceServer{
 		DB: db,
 	}
 
 	// Create Plinko update manager
-	plinkoManager := pianopir.NewPlinkoUpdateManager(server, CHUNK_SIZE, SET_SIZE)
+	plinkoManager := plinkopir.NewPlinkoUpdateManager(server, CHUNK_SIZE, SET_SIZE)
 
 	// Enable cache mode for optimal performance (79x speedup)
 	cacheBuildTime := plinkoManager.EnableCacheMode()
@@ -655,7 +655,7 @@ type AccountChange struct {
 	NewValue uint64
 }
 
-func processUpdates(pm *pianopir.PlinkoUpdateManager, changes []AccountChange, blockNum uint64) {
+func processUpdates(pm *plinkopir.PlinkoUpdateManager, changes []AccountChange, blockNum uint64) {
 	startTime := time.Now()
 
 	// Convert changes to Plinko update format
@@ -686,7 +686,7 @@ func processUpdates(pm *pianopir.PlinkoUpdateManager, changes []AccountChange, b
 	log.Printf("  ⏱️  Total block processing time: %v", totalTime)
 }
 
-func saveDeltas(path string, deltas []pianopir.HintDelta) error {
+func saveDeltas(path string, deltas []plinkopir.HintDelta) error {
 	file, err := os.Create(path)
 	if err != nil {
 		return err
@@ -708,40 +708,40 @@ func saveDeltas(path string, deltas []pianopir.HintDelta) error {
 ```
 
 **Key Implementation Notes**:
-- Uses the **completed Plinko implementation** from `/src/piano-pir/server/plinko.go`
+- Uses the **completed Plinko implementation** from `/src/plinko-pir/server/plinko.go`
 - Cache mode enabled for **79x speedup** (23.75 μs per 2,000-account block)
 - Generates deltas in real-time (no hourly regeneration needed)
 - Delta files are ~20-40 KB each (vs 8 MB full hint)
 
 ---
 
-### 3.5 Service 5: Piano PIR Server
+### 3.5 Service 5: Plinko PIR Server
 
 **Purpose**: HTTP/gRPC API to answer PIR queries
 
-**Dockerfile** (`services/piano-pir-server/Dockerfile`):
+**Dockerfile** (`services/plinko-pir-server/Dockerfile`):
 ```dockerfile
 FROM golang:1.21-alpine
 
 WORKDIR /app
 
-# Copy Piano PIR implementation
-COPY piano-pir/ /app/piano-pir/
+# Copy Plinko PIR implementation
+COPY plinko-pir/ /app/plinko-pir/
 
-WORKDIR /app/piano-pir/server
+WORKDIR /app/plinko-pir/server
 
 # Build server
-RUN go build -o piano-pir-server .
+RUN go build -o plinko-pir-server .
 
 EXPOSE 3000
 
 # Wait for hint.bin to exist before starting
-CMD ["sh", "-c", "while [ ! -f /data/hint.bin ]; do sleep 2; done && ./piano-pir-server"]
+CMD ["sh", "-c", "while [ ! -f /data/hint.bin ]; do sleep 2; done && ./plinko-pir-server"]
 ```
 
-**Note**: The Piano PIR server is already implemented in the research codebase. It includes:
+**Note**: The Plinko PIR server is already implemented in the research codebase. It includes:
 - `PlaintextQuery` RPC endpoint (for testing)
-- `FullSetQuery` RPC endpoint (Piano PIR query)
+- `FullSetQuery` RPC endpoint (Plinko PIR query)
 - `PunctSetQuery` RPC endpoint (optimized query)
 - Database access via shared memory
 
@@ -808,7 +808,7 @@ http {
 
 ### 3.7 Service 7: Ambire Wallet
 
-**Purpose**: Modified Ambire wallet with PianoPIRProvider integration
+**Purpose**: Modified Ambire wallet with PlinkoPIRProvider integration
 
 **Dockerfile** (`services/ambire-wallet/Dockerfile`):
 ```dockerfile
@@ -847,13 +847,13 @@ CMD ["nginx", "-g", "daemon off;"]
 
 **Key Code Changes to Ambire Wallet**:
 
-**1. Create PianoPIRProvider** (`src/providers/PianoPIRProvider.js`):
+**1. Create PlinkoPIRProvider** (`src/providers/PlinkoPIRProvider.js`):
 ```javascript
 import { BaseProvider } from '@ethersproject/providers';
-import { PianoPIRClient } from '../lib/piano-pir-client';
+import { PlinkoPIRClient } from '../lib/plinko-pir-client';
 import { PlinkoClient } from '../lib/plinko-client';
 
-export class PianoPIRProvider extends BaseProvider {
+export class PlinkoPIRProvider extends BaseProvider {
   constructor(config) {
     super(config.network || 'mainnet');
 
@@ -872,7 +872,7 @@ export class PianoPIRProvider extends BaseProvider {
       return;
     }
 
-    console.log('📥 Downloading Piano PIR hint...');
+    console.log('📥 Downloading Plinko PIR hint...');
     const hintUrl = `${this.hintCdnUrl}/hint.bin`;
 
     const response = await fetch(hintUrl);
@@ -880,7 +880,7 @@ export class PianoPIRProvider extends BaseProvider {
 
     console.log(`✅ Hint downloaded: ${hintBuffer.byteLength} bytes`);
 
-    this.client = new PianoPIRClient(hintBuffer);
+    this.client = new PlinkoPIRClient(hintBuffer);
     this.plinkoClient = new PlinkoClient(this.client);
     this.hintLoaded = true;
 
@@ -947,7 +947,7 @@ export class PianoPIRProvider extends BaseProvider {
         await this.ensureHintLoaded();
         return await this.pirGetBalance(params.address);
       } catch (error) {
-        console.warn('Piano PIR query failed, using fallback:', error);
+        console.warn('Plinko PIR query failed, using fallback:', error);
         return await this.fallbackProvider.perform(method, params);
       }
     }
@@ -959,10 +959,10 @@ export class PianoPIRProvider extends BaseProvider {
   async pirGetBalance(address) {
     const startTime = Date.now();
 
-    // Generate Piano PIR query
+    // Generate Plinko PIR query
     const query = await this.client.generateQuery(address);
 
-    // Send to Piano PIR server
+    // Send to Plinko PIR server
     const response = await fetch(`${this.pirServerUrl}/query`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -975,7 +975,7 @@ export class PianoPIRProvider extends BaseProvider {
     const entry = await this.client.decryptResponse(responseBuffer);
 
     const latency = Date.now() - startTime;
-    console.log(`✅ Piano PIR query completed in ${latency}ms (private!)`);
+    console.log(`✅ Plinko PIR query completed in ${latency}ms (private!)`);
 
     // Extract balance from 8-byte entry
     const balance = this.parseBalance(entry);
@@ -1002,8 +1002,8 @@ export class PianoPIRProvider extends BaseProvider {
  */
 
 export class PlinkoClient {
-  constructor(pianoPirClient) {
-    this.pianoPirClient = pianoPirClient;
+  constructor(plinkoPirClient) {
+    this.plinkoPirClient = plinkoPirClient;
   }
 
   applyDelta(deltaBuffer) {
@@ -1038,37 +1038,37 @@ export class PlinkoClient {
   }
 
   applyXORDelta(hintSetID, isBackupSet, delta) {
-    // Get hint set from Piano PIR client
-    const hintSet = this.pianoPirClient.getHintSet(hintSetID, isBackupSet);
+    // Get hint set from Plinko PIR client
+    const hintSet = this.plinkoPirClient.getHintSet(hintSetID, isBackupSet);
 
     // Apply XOR delta
     for (let i = 0; i < delta.length; i++) {
       hintSet[i] ^= delta[i];
     }
 
-    // Update hint set in Piano PIR client
-    this.pianoPirClient.setHintSet(hintSetID, isBackupSet, hintSet);
+    // Update hint set in Plinko PIR client
+    this.plinkoPirClient.setHintSet(hintSetID, isBackupSet, hintSet);
   }
 }
 ```
 
-**3. Create Piano PIR Client** (`src/lib/piano-pir-client.js`):
+**3. Create Plinko PIR Client** (`src/lib/plinko-pir-client.js`):
 ```javascript
 /**
- * Piano PIR Client Library
+ * Plinko PIR Client Library
  * Generates queries and decrypts responses
  */
 
-export class PianoPIRClient {
+export class PlinkoPIRClient {
   constructor(hintBuffer) {
     this.hint = this.parseHint(hintBuffer);
-    // Piano PIR hint structure:
+    // Plinko PIR hint structure:
     // - LocalSets: ChunkNum sets of size SetSize
     // - BackupSets: Additional sets for replacement
   }
 
   parseHint(hintBuffer) {
-    // TODO: Parse Piano PIR hint structure
+    // TODO: Parse Plinko PIR hint structure
     // For PoC, can use simplified structure
 
     // Hint structure (simplified):
@@ -1099,15 +1099,15 @@ export class PianoPIRClient {
   }
 
   async generateQuery(address) {
-    // TODO: Implement actual Piano PIR query generation
-    // This requires understanding Piano PIR client algorithm
+    // TODO: Implement actual Plinko PIR query generation
+    // This requires understanding Plinko PIR client algorithm
 
     // For PoC: Can create mock query
-    // In production: Use Piano PIR client logic
+    // In production: Use Plinko PIR client logic
 
-    console.log(`🔐 Generating Piano PIR query for ${address} (private!)`);
+    console.log(`🔐 Generating Plinko PIR query for ${address} (private!)`);
 
-    // Piano PIR query structure (simplified):
+    // Plinko PIR query structure (simplified):
     // - PRF key for set selection
     // - Indices for punctured sets
 
@@ -1121,10 +1121,10 @@ export class PianoPIRClient {
   }
 
   async decryptResponse(responseBuffer) {
-    // TODO: Implement actual Piano PIR decryption
+    // TODO: Implement actual Plinko PIR decryption
     // For PoC: Return mock entry
 
-    console.log('🔓 Decrypting Piano PIR response...');
+    console.log('🔓 Decrypting Plinko PIR response...');
 
     // Mock: Return 8-byte entry with random balance
     const entry = new ArrayBuffer(8);
@@ -1154,7 +1154,7 @@ export class PianoPIRClient {
 // src/providers/index.js
 
 import { JsonRpcProvider } from '@ethersproject/providers';
-import { PianoPIRProvider } from './PianoPIRProvider';
+import { PlinkoPIRProvider } from './PlinkoPIRProvider';
 
 const USE_PIR = localStorage.getItem('privacyMode') === 'enabled';
 
@@ -1165,14 +1165,14 @@ if (USE_PIR) {
     import.meta.env.VITE_FALLBACK_RPC
   );
 
-  provider = new PianoPIRProvider({
+  provider = new PlinkoPIRProvider({
     network: 'mainnet',
     pirServerUrl: import.meta.env.VITE_PIR_SERVER_URL,
     hintCdnUrl: import.meta.env.VITE_CDN_URL,
     fallbackProvider
   });
 
-  console.log('✅ Privacy Mode enabled (using Piano PIR + Plinko)');
+  console.log('✅ Privacy Mode enabled (using Plinko PIR + Plinko)');
 } else {
   provider = new JsonRpcProvider(import.meta.env.VITE_FALLBACK_RPC);
   console.log('⚠️  Privacy Mode disabled (using direct RPC)');
@@ -1207,7 +1207,7 @@ export function PrivacyMode() {
           checked={enabled}
           onChange={togglePrivacy}
         />
-        🔐 Privacy Mode (Piano PIR + Plinko)
+        🔐 Privacy Mode (Plinko PIR + Plinko)
       </label>
 
       {enabled && (
@@ -1241,7 +1241,7 @@ services:
   # Service 1: Ethereum Mock
   eth-mock:
     build: ./services/eth-mock
-    container_name: piano-pir-eth-mock
+    container_name: plinko-pir-eth-mock
     ports:
       - "8545:8545"
     volumes:
@@ -1255,7 +1255,7 @@ services:
   # Service 2: Database Generator (runs once)
   db-generator:
     build: ./services/db-generator
-    container_name: piano-pir-db-generator
+    container_name: plinko-pir-db-generator
     volumes:
       - shared-data:/data
     depends_on:
@@ -1263,10 +1263,10 @@ services:
         condition: service_healthy
     restart: "no"  # Run once only
 
-  # Service 3: Piano Hint Generator (runs once after db-generator)
-  piano-hint-generator:
-    build: ./services/piano-hint-generator
-    container_name: piano-pir-hint-generator
+  # Service 3: Plinko Hint Generator (runs once after db-generator)
+  plinko-hint-generator:
+    build: ./services/plinko-hint-generator
+    container_name: plinko-pir-hint-generator
     volumes:
       - shared-data:/data
     depends_on:
@@ -1277,13 +1277,13 @@ services:
   # Service 4: Plinko Update Service (always running)
   plinko-update-service:
     build: ./services/plinko-update-service
-    container_name: piano-pir-plinko-updates
+    container_name: plinko-pir-plinko-updates
     ports:
       - "3001:3001"
     volumes:
       - shared-data:/data
     depends_on:
-      piano-hint-generator:
+      plinko-hint-generator:
         condition: service_completed_successfully
       eth-mock:
         condition: service_healthy
@@ -1293,16 +1293,16 @@ services:
       timeout: 5s
       retries: 5
 
-  # Service 5: Piano PIR Server
-  piano-pir-server:
-    build: ./services/piano-pir-server
-    container_name: piano-pir-server
+  # Service 5: Plinko PIR Server
+  plinko-pir-server:
+    build: ./services/plinko-pir-server
+    container_name: plinko-pir-server
     ports:
       - "3000:3000"
     volumes:
       - shared-data:/data:ro  # Read-only access
     depends_on:
-      piano-hint-generator:
+      plinko-hint-generator:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
@@ -1313,13 +1313,13 @@ services:
   # Service 6: CDN Mock
   cdn-mock:
     build: ./services/cdn-mock
-    container_name: piano-pir-cdn
+    container_name: plinko-pir-cdn
     ports:
       - "8080:8080"
     volumes:
       - shared-data:/data:ro
     depends_on:
-      piano-hint-generator:
+      plinko-hint-generator:
         condition: service_completed_successfully
       plinko-update-service:
         condition: service_healthy
@@ -1327,7 +1327,7 @@ services:
   # Service 7: Ambire Wallet
   ambire-wallet:
     build: ./services/ambire-wallet
-    container_name: piano-pir-wallet
+    container_name: plinko-pir-wallet
     ports:
       - "5173:80"  # Nginx serves on port 80, exposed as 5173
     environment:
@@ -1335,7 +1335,7 @@ services:
       - VITE_CDN_URL=http://localhost:8080
       - VITE_FALLBACK_RPC=https://eth.llamarpc.com
     depends_on:
-      piano-pir-server:
+      plinko-pir-server:
         condition: service_healthy
       cdn-mock:
         condition: service_started
@@ -1368,12 +1368,12 @@ docker-compose --version  # Should be 1.29+
 cd /Users/user/pse/tor/research/frodopir-ethereum-rpc-analysis
 
 # Create PoC directory
-mkdir -p piano-pir-poc
-cd piano-pir-poc
+mkdir -p plinko-pir-poc
+cd plinko-pir-poc
 
-# Copy Piano PIR implementation from research phase
-cp -r ../src/piano-pir services/piano-pir-server/piano-pir
-cp -r ../src/piano-pir services/piano-hint-generator/piano-pir
+# Copy Plinko PIR implementation from research phase
+cp -r ../src/piano-pir services/plinko-pir-server/piano-pir
+cp -r ../src/piano-pir services/plinko-hint-generator/piano-pir
 cp -r ../src/piano-pir services/plinko-update-service/piano-pir
 
 # Clone Ambire wallet fork
@@ -1398,10 +1398,10 @@ docker-compose up
 # Expected output:
 # [eth-mock] Anvil listening on 0.0.0.0:8545
 # [db-generator] ✅ Database created: 32 KB
-# [piano-hint-generator] ✅ Hint generated: 8 MB
+# [plinko-hint-generator] ✅ Hint generated: 8 MB
 # [plinko-update-service] ✅ Cache mode enabled in 650ms
 # [plinko-update-service] ✅ Monitoring Ethereum blocks...
-# [piano-pir-server] 🚀 Piano PIR Server listening on port 3000
+# [plinko-pir-server] 🚀 Plinko PIR Server listening on port 3000
 # [cdn-mock] nginx started
 # [ambire-wallet] Server running on port 80
 ```
@@ -1417,7 +1417,7 @@ open http://localhost:5173
 # 2. Enable "Privacy Mode" toggle
 # 3. Wait for hint download (8 MB, ~500ms)
 # 4. View account balance
-# 5. Check browser console: "✅ Piano PIR query completed in 5ms (private!)"
+# 5. Check browser console: "✅ Plinko PIR query completed in 5ms (private!)"
 # 6. Wait 12 seconds for new block
 # 7. See delta applied: "⚡ Applying delta from block 1 (24KB)"
 ```
@@ -1425,16 +1425,16 @@ open http://localhost:5173
 ### 5.5 Verify Privacy
 
 ```bash
-# Check Piano PIR server logs (should NOT show which address was queried)
-docker logs piano-pir-server
+# Check Plinko PIR server logs (should NOT show which address was queried)
+docker logs plinko-pir-server
 
 # Expected output:
-# 📨 Received Piano PIR query: 272 bytes
+# 📨 Received Plinko PIR query: 272 bytes
 # ✅ Computed response in 5ms: 8 bytes
 # (NO address logged = privacy working!)
 
 # Check Plinko update service logs (real-time updates)
-docker logs piano-pir-plinko-updates
+docker logs plinko-pir-plinko-updates
 
 # Expected output:
 # 📦 Block 1: 0xabc...
@@ -1467,8 +1467,8 @@ docker logs piano-pir-plinko-updates
 # Terminal 1: Start Docker Compose
 docker-compose up
 
-# Terminal 2: Monitor Piano PIR server logs
-docker logs -f piano-pir-server
+# Terminal 2: Monitor Plinko PIR server logs
+docker logs -f plinko-pir-server
 
 # Terminal 3: Trigger wallet query
 # Open http://localhost:5173, view balance
@@ -1479,7 +1479,7 @@ docker logs -f piano-pir-server
 **Test 2: Update Speed**
 ```bash
 # Monitor Plinko update service
-docker logs -f piano-pir-plinko-updates
+docker logs -f plinko-pir-plinko-updates
 
 # Expected: 100 account updates in <100μs per block
 # Success criteria: Update time < 1ms
@@ -1498,12 +1498,12 @@ docker logs -f piano-pir-plinko-updates
 
 **Test 4: Fallback Behavior**
 ```bash
-# Stop Piano PIR server
-docker stop piano-pir-server
+# Stop Plinko PIR server
+docker stop plinko-pir-server
 
 # Try querying balance in wallet
 # Expected: Automatically falls back to public RPC
-# Console: "Piano PIR query failed, using fallback"
+# Console: "Plinko PIR query failed, using fallback"
 ```
 
 ---
@@ -1512,20 +1512,20 @@ docker stop piano-pir-server
 
 ### 7.1 Performance Comparison
 
-| Metric | FrodoPIR PoC | Piano + Plinko PoC | Winner |
+| Metric | FrodoPIR PoC | Plinko PIR PoC | Winner |
 |--------|--------------|-------------------|--------|
-| **Query Latency** | ~100ms | ~5ms | Piano (20x) |
-| **Hint Size (2^12)** | 12 MB | 8 MB | Piano (1.5x less) |
-| **Hint Size (2^23)** | 780 MB | 70 MB | Piano (11x less) |
-| **Update Strategy** | Hourly regen | Real-time (Plinko) | Piano |
-| **Update Cost** | 36s GPU | 23.75 μs CPU | Piano (1.5M×) |
-| **Delta Size** | N/A (full hint) | 40 KB | Piano |
-| **Hardware** | GPU recommended | CPU only | Piano |
+| **Query Latency** | ~100ms | ~5ms | Plinko (20x) |
+| **Hint Size (2^12)** | 12 MB | 8 MB | Plinko (1.5x less) |
+| **Hint Size (2^23)** | 780 MB | 70 MB | Plinko (11x less) |
+| **Update Strategy** | Hourly regen | Real-time (Plinko) | Plinko |
+| **Update Cost** | 36s GPU | 23.75 μs CPU | Plinko (1.5M×) |
+| **Delta Size** | N/A (full hint) | 40 KB | Plinko |
+| **Hardware** | GPU recommended | CPU only | Plinko |
 | **Privacy** | Info-theoretic | Computational (OWF) | FrodoPIR (stronger) |
 
 ### 7.2 Implementation Complexity
 
-| Aspect | FrodoPIR PoC | Piano + Plinko PoC |
+| Aspect | FrodoPIR PoC | Plinko PIR PoC |
 |--------|--------------|-------------------|
 | **Core Implementation** | ~3,000 LOC (Rust/C++) | ~800 LOC (Go) |
 | **Services** | 6 services | 7 services (adds Plinko) |
@@ -1540,7 +1540,7 @@ docker stop piano-pir-server
 - Update: 36s GPU or 720s CPU (requires GPU farm)
 - Cost: $3,921/month for 1000 qps
 
-**Piano + Plinko at 2^23 (8.4M accounts)**:
+**Plinko PIR at 2^23 (8.4M accounts)**:
 - Hint size: 70 MB (mobile-friendly)
 - Update: 23.75 μs CPU (real-time, no GPU needed)
 - Cost: $491/month for 1000 qps
@@ -1553,12 +1553,12 @@ docker stop piano-pir-server
 
 ### 8.1 Common Issues
 
-**Problem**: `piano-hint-generator` fails with "database.bin not found"
+**Problem**: `plinko-hint-generator` fails with "database.bin not found"
 
 **Solution**:
 ```bash
 # Check if db-generator completed successfully
-docker logs piano-pir-db-generator
+docker logs plinko-pir-db-generator
 
 # If not, regenerate database
 docker-compose up db-generator
@@ -1571,7 +1571,7 @@ docker-compose up db-generator
 **Solution**:
 ```bash
 # Check Plinko service logs
-docker logs piano-pir-plinko-updates
+docker logs plinko-pir-plinko-updates
 
 # Verify cache mode is enabled (should see initialization message)
 # If not, rebuild service
@@ -1585,7 +1585,7 @@ docker-compose up --build plinko-update-service
 **Solution**:
 ```bash
 # Check if deltas directory exists
-docker exec piano-pir-cdn ls -lh /data/deltas/
+docker exec plinko-pir-cdn ls -lh /data/deltas/
 
 # Should show delta-*.bin files
 # If empty, check Plinko service is running
@@ -1597,14 +1597,14 @@ docker-compose ps plinko-update-service
 **Problem**: Query latency >50ms
 
 **Possible causes**:
-- Piano PIR server not using production mode
+- Plinko PIR server not using production mode
 - Database loaded from disk (should be in-memory)
 - Network latency (check Docker network)
 
 **Solution**:
 ```bash
-# Check Piano PIR server is using in-memory database
-docker logs piano-pir-server | grep "Database loaded"
+# Check Plinko PIR server is using in-memory database
+docker logs plinko-pir-server | grep "Database loaded"
 
 # Should show: "Database loaded: 32768 bytes (in-memory)"
 ```
@@ -1613,23 +1613,23 @@ docker logs piano-pir-server | grep "Database loaded"
 
 ## 9. Next Steps
 
-### 9.1 Implement Real Piano PIR Client
+### 9.1 Implement Real Plinko PIR Client
 
 Current PoC uses mocks for query/response computation. To prove actual privacy:
 
-**Option A: Use Go Piano PIR Client via WASM** (Best for production)
+**Option A: Use Go Plinko PIR Client via WASM** (Best for production)
 ```bash
 cd services/ambire-wallet
-# Compile Go Piano PIR client to WebAssembly
-GOOS=js GOARCH=wasm go build -o piano-pir-client.wasm
+# Compile Go Plinko PIR client to WebAssembly
+GOOS=js GOARCH=wasm go build -o plinko-pir-client.wasm
 ```
 
-**Option B: Implement JavaScript Piano PIR** (Easier for PoC)
-- Port Piano PIR client algorithm from Go to JavaScript
+**Option B: Implement JavaScript Plinko PIR** (Easier for PoC)
+- Port Plinko PIR client algorithm from Go to JavaScript
 - Use Web Crypto API for PRF operations
 
-**Option C: Use Piano PIR CLI via Proxy** (Simplest for PoC)
-- Create Node.js proxy that calls Piano PIR Go binary
+**Option C: Use Plinko PIR CLI via Proxy** (Simplest for PoC)
+- Create Node.js proxy that calls Plinko PIR Go binary
 - Wallet sends query to proxy, proxy calls Go client
 
 ### 9.2 Complete Plinko Client Integration
@@ -1648,7 +1648,7 @@ Current delta application is simplified. To fully integrate:
 Once working with 2^12:
 1. Change `NUM_ENTRIES = 4096` to `8388608` (2^23)
 2. Regenerate database and hint
-3. Test query latency (should remain ~5ms with Piano PIR)
+3. Test query latency (should remain ~5ms with Plinko PIR)
 4. Test update latency (should be ~24μs for 2,000 accounts)
 
 ### 9.4 Deploy to Production
@@ -1663,7 +1663,7 @@ Once working with 2^12:
 
 ## 10. Summary
 
-This PoC specification provides everything needed to build a working Piano PIR + Plinko demo:
+This PoC specification provides everything needed to build a working Plinko PIR + Plinko demo:
 
 **What You Get**:
 - Complete Docker setup (`docker-compose up` to start)
@@ -1675,7 +1675,7 @@ This PoC specification provides everything needed to build a working Piano PIR +
 - **70 MB hints** at production scale (11x less than FrodoPIR)
 
 **What's Missing** (for production):
-- Real Piano PIR client implementation (currently mocked - use Go via WASM)
+- Real Plinko PIR client implementation (currently mocked - use Go via WASM)
 - Complete Plinko client delta application (simplified tracking)
 - Full-size database (2^23 instead of 2^12)
 - Real Ethereum mainnet data
@@ -1684,7 +1684,7 @@ This PoC specification provides everything needed to build a working Piano PIR +
 
 **Time Estimate**:
 - PoC with mocks: 1 week
-- PoC with real Piano PIR client: 2-3 weeks
+- PoC with real Plinko PIR client: 2-3 weeks
 - Production-ready: 2-3 months
 
 **Performance Advantages**:
@@ -1697,7 +1697,7 @@ This PoC specification provides everything needed to build a working Piano PIR +
 **Next Steps**:
 1. Implement services as specified
 2. Test with Docker Compose
-3. Integrate real Piano PIR client (Go WASM or JavaScript port)
+3. Integrate real Plinko PIR client (Go WASM or JavaScript port)
 4. Complete Plinko delta application logic
 5. Scale to full database (2^23)
 
@@ -1707,15 +1707,15 @@ This PoC specification provides everything needed to build a working Piano PIR +
 **Implementation Status**: Specification complete, ready for development
 **Estimated LoC**: ~1,800 lines across all services (vs ~2,000 for FrodoPIR)
 **Key Dependencies**:
-- Completed Piano PIR Go implementation (already exists in `/src/piano-pir/`)
+- Completed Plinko PIR Go implementation (already exists in `/src/piano-pir/`)
 - Completed Plinko update manager (already exists in `/src/piano-pir/server/plinko.go`)
 - Validated at 8.4M account scale (23.75 μs per 2,000-account block)
 
 **Research References**:
-- Piano PIR Paper: https://eprint.iacr.org/2023/452
+- Plinko PIR Paper: https://eprint.iacr.org/2023/452
 - Plinko Extension: https://eprint.iacr.org/2024/318 (EUROCRYPT 2025)
-- Piano PIR Implementation: https://github.com/wuwuz/Piano-PIR-new
+- Plinko PIR Implementation: https://github.com/wuwuz/Piano-PIR-new
 - Research Findings: `/findings/piano-vs-frodopir-comparison.md`
 - Plinko Performance: `/findings/plinko-final-optimized-results.md`
 
-*Phase 4 PoC specification for Piano PIR + Plinko Ethereum feasibility study.*
+*Phase 4 PoC specification for Plinko PIR + Plinko Ethereum feasibility study.*

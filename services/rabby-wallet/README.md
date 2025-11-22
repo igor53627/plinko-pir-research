@@ -19,8 +19,8 @@
 - **Vanilla CSS**: Styling (no dependencies)
 
 ### Plinko PIR Integration
-- **PianoPIRProvider**: React context for privacy mode state
-- **piano-pir-client.js**: Hint download, query generation
+- **PlinkoPIRProvider**: React context for privacy mode state
+- **plinko-pir-client.js**: Hint download, query generation
 - **plinko-client.js**: Delta synchronization
 - **PrivacyMode component**: Toggle UI with status
 
@@ -88,7 +88,7 @@ npm run build
 
 ## Components
 
-### PianoPIRProvider
+### PlinkoPIRProvider
 React context provider for privacy state:
 
 ```javascript
@@ -101,7 +101,7 @@ const {
   error,              // String: error message
   togglePrivacyMode,  // Function: toggle privacy
   getBalance          // Function: query balance
-} = usePianoPIR();
+} = usePlinkoPIR();
 ```
 
 ### PrivacyMode Component
@@ -122,11 +122,11 @@ Main wallet interface:
 
 ## Client Libraries
 
-### PianoPIRClient
+### PlinkoPIRClient
 Handles Plinko PIR operations:
 
 ```javascript
-const client = new PianoPIRClient(pirServerUrl, cdnUrl);
+const client = new PlinkoPIRClient(pirServerUrl, cdnUrl);
 
 // Download hint (one-time)
 await client.downloadHint();
@@ -158,10 +158,10 @@ client.applyDeltaToHint(delta, pirClient);
 
 - `src/App.jsx` - Main wallet interface
 - `src/App.css` - Wallet styles
-- `src/providers/PianoPIRProvider.jsx` - Privacy mode context
+- `src/providers/PlinkoPIRProvider.jsx` - Privacy mode context
 - `src/components/PrivacyMode.jsx` - Privacy toggle UI
 - `src/components/PrivacyMode.css` - Privacy mode styles
-- `src/clients/piano-pir-client.js` - Plinko PIR client library
+- `src/clients/plinko-pir-client.js` - Plinko PIR client library
 - `src/clients/plinko-client.js` - Plinko delta client
 - `package.json` - NPM dependencies
 - `vite.config.js` - Vite configuration
@@ -272,7 +272,7 @@ const PrivacyMode = lazy(() => import('./components/PrivacyMode'));
 **Hint Persistence**:
 ```javascript
 // Use IndexedDB to persist hint across sessions
-const db = await openDB('piano-pir-hints', 1, {
+const db = await openDB('plinko-pir-hints', 1, {
   upgrade(db) {
     db.createObjectStore('hints');
   }

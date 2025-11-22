@@ -1,4 +1,4 @@
-# Multi-stage build for Piano PIR Wallet
+# Multi-stage build for Plinko PIR Wallet
 # Stage 1: Build React app with Vite
 FROM node:18-alpine AS builder
 

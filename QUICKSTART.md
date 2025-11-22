@@ -63,7 +63,7 @@ The implementation consists of 7 services:
 
 1. **Ethereum Mock (Anvil)** - 8.4M pre-funded accounts
 2. **Database Generator** - Extracts account balances
-3. **Piano Hint Generator** - Creates PIR hints
+3. **Plinko Hint Generator** - Creates PIR hints
 4. **Plinko Update Service** - Real-time incremental updates
 5. **Plinko PIR Server** - Private query endpoint
 6. **CDN Mock** - Serves hint and delta files

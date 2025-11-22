@@ -1,7 +1,7 @@
 .PHONY: help build up down start logs clean reset test status health init
 
 help:
-	@echo "Piano PIR + Plinko PoC - Makefile Commands"
+	@echo "Plinko PIR + Plinko PoC - Makefile Commands"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make init        - Initialize environment (.env file)"

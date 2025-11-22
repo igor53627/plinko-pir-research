@@ -1,6 +1,6 @@
 # State Syncer Service
 
-Continuously streams Ethereum mainnet (via Hypersync) and keeps the canonical `database.bin` plus public snapshot/delta artifacts fresh. This replaces the legacy Piano hint generator entirely: clients now derive hints locally from the published snapshot package and append-only deltas.
+Continuously streams Ethereum mainnet (via Hypersync) and keeps the canonical `database.bin` plus public snapshot/delta artifacts fresh. This replaces the legacy Plinko hint generator entirely: clients now derive hints locally from the published snapshot package and append-only deltas.
 
 ## Responsibilities
 - Load canonical `database.bin` + `address-mapping.bin` generated via `scripts/build_database_from_parquet.py`.

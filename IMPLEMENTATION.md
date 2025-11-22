@@ -142,7 +142,7 @@ Background Services:
 ```
 1. Anvil starts with 8.4M pre-funded accounts
 2. Database Generator queries all accounts → database.bin
-3. Piano Hint Generator creates PIR hints → hint.bin
+3. Plinko Hint Generator creates PIR hints → hint.bin
 4. Plinko Update Service starts monitoring blocks
 5. Plinko PIR Server loads database and waits for queries
 6. CDN serves hint.bin and delta files
@@ -198,7 +198,7 @@ Background process (every 30 seconds):
 | Bandwidth (30s sync) | - | ~60-90 KB |
 | Daily Bandwidth | - | ~216 MB |
 
-### Comparison: FrodoPIR vs Piano+Plinko
+### Comparison: FrodoPIR vs Plinko PIR
 
 | System | Query Type | Server Ops | Client Ops | Communication | Updates |
 |--------|-----------|-----------|-----------|---------------|---------|
@@ -206,7 +206,7 @@ Background process (every 30 seconds):
 | **Plinko PIR** | FullSet PIR | O(√n) | O(√n) | O(√n) | Plinko deltas |
 | **Plinko Updates** | Delta XOR | O(1) per entry | O(1) XOR | O(1) per change | Incremental |
 
-**Key Advantages of Piano+Plinko:**
+**Key Advantages of Plinko PIR:**
 
 1. **Incremental Updates**: FrodoPIR requires full hint regeneration on every block. Plinko updates in O(1) time per changed entry.
 
@@ -216,7 +216,7 @@ Background process (every 30 seconds):
 
 4. **Bandwidth Efficiency**: Only changed entries transmitted (~30 KB per block vs ~70 MB full hint).
 
-5. **Information-Theoretic Privacy**: Both systems provide perfect privacy, but Piano+Plinko maintains it while updating incrementally.
+5. **Information-Theoretic Privacy**: Both systems provide perfect privacy, but Plinko PIR maintains it while updating incrementally.
 
 ## Service Details
 
@@ -237,7 +237,7 @@ Background process (every 30 seconds):
 - **Runtime**: ~3-5 minutes (one-time)
 - **Concurrency**: 10,000+ parallel account queries
 
-### Service 3: Piano Hint Generator (Go)
+### Service 3: Plinko Hint Generator (Go)
 
 - **Purpose**: Generate PIR hints from database
 - **Output**: `hint.bin` (~70 MB)
@@ -259,8 +259,8 @@ Background process (every 30 seconds):
 - **Port**: 3000
 - **API Endpoints**:
   - `POST /query/plaintext` - Direct database lookup (testing)
-  - `POST /query/fullset` - Piano FullSet PIR query
-  - `POST /query/punctset` - Piano PunctSet PIR query
+  - `POST /query/fullset` - Plinko FullSet PIR query
+  - `POST /query/punctset` - Plinko PunctSet PIR query
   - `GET /health` - Health check
 - **Privacy**: NEVER logs queried addresses
 
@@ -323,7 +323,7 @@ Background process (every 30 seconds):
 1. **Access the wallet**: http://localhost:5173
 2. **Enable Privacy Mode**: Click toggle, wait for hint download
 3. **Query a balance**: Enter address `0x1000000000000000000000000000000000000042`
-4. **Check privacy**: `docker logs piano-pir-server | grep "0x"` should show NOTHING
+4. **Check privacy**: `docker logs plinko-pir-server | grep "0x"` should show NOTHING
 5. **Verify deltas**: `ls -lh shared/data/deltas/` should show growing delta files
 
 ## Troubleshooting
@@ -375,10 +375,10 @@ ls -lh data/database.bin data/address-mapping.bin
 docker ps | grep plinko
 
 # Check logs for cache mode enabled
-docker logs piano-pir-plinko-updates | grep "Cache mode"
+docker logs plinko-pir-plinko-updates | grep "Cache mode"
 
 # Check Anvil is mining blocks
-docker logs piano-pir-anvil | grep "mined"
+docker logs plinko-pir-anvil | grep "mined"
 
 # Verify delta directory exists
 ls -lh shared/data/deltas/
@@ -415,7 +415,7 @@ curl -X POST http://localhost:3000/query/plaintext \
 docker ps | grep rabby-wallet
 
 # Check wallet logs
-docker logs piano-pir-rabby-wallet
+docker logs plinko-pir-rabby-wallet
 
 # Rebuild wallet container
 docker-compose build rabby-wallet
@@ -434,11 +434,11 @@ docker-compose up -d rabby-wallet
 # Check Plinko PIR Server code for logging statements
 
 # Verify server is using correct logging:
-grep -r "log.*index" services/piano-pir-server/
+grep -r "log.*index" services/plinko-pir-server/
 # Should find NO logs that include the queried index
 
 # Review server logs
-docker logs piano-pir-server | grep "0x"
+docker logs plinko-pir-server | grep "0x"
 # Should show NOTHING related to queried addresses
 ```
 
@@ -505,7 +505,7 @@ const ChunkSize = 14142  // From current value
 ```yaml
 # docker-compose.yml
 services:
-  piano-pir-server:
+  plinko-pir-server:
     deploy:
       resources:
         limits:
@@ -626,11 +626,11 @@ Plinko PIR provides **perfect privacy**:
 
 ```bash
 # Test 1: Server logs should contain NO addresses
-docker logs piano-pir-server | grep "0x"
+docker logs plinko-pir-server | grep "0x"
 # Expected: No output
 
 # Test 2: Plinko logs should contain NO specific indices
-docker logs piano-pir-plinko-updates | grep "index"
+docker logs plinko-pir-plinko-updates | grep "index"
 # Expected: Only aggregate statistics
 
 # Test 3: Automated privacy test
@@ -644,13 +644,13 @@ docker logs piano-pir-plinko-updates | grep "index"
 
 ```bash
 # Build specific service
-docker-compose build piano-pir-server
+docker-compose build plinko-pir-server
 
 # Rebuild without cache
-docker-compose build --no-cache piano-pir-server
+docker-compose build --no-cache plinko-pir-server
 
 # View service logs
-docker-compose logs -f piano-pir-server
+docker-compose logs -f plinko-pir-server
 ```
 
 ### Local Development (without Docker)
@@ -662,7 +662,7 @@ go build -o db-generator
 ./db-generator
 
 # Plinko PIR Server
-cd services/piano-pir-server
+cd services/plinko-pir-server
 go build -o pir-server
 ./pir-server
 
@@ -701,7 +701,7 @@ make start
 ## Project Structure
 
 ```
-piano-pir-poc/
+plinko-pir-poc/
 ├── docker-compose.yml           # Service orchestration
 ├── Makefile                     # Convenience commands
 ├── README.md                    # This file
@@ -719,7 +719,7 @@ piano-pir-poc/
 │   │   ├── go.sum
 │   │   └── main.go
 │   │
-│   ├── piano-hint-generator/    # Piano Hint Generator
+│   ├── plinko-hint-generator/    # Plinko Hint Generator
 │   │   ├── Dockerfile
 │   │   ├── generate-hint.sh
 │   │   ├── go.mod
@@ -734,7 +734,7 @@ piano-pir-poc/
 │   │   ├── plinko.go
 │   │   └── iprf.go
 │   │
-│   ├── piano-pir-server/        # Plinko PIR Server
+│   ├── plinko-pir-server/        # Plinko PIR Server
 │   │   ├── Dockerfile
 │   │   ├── go.mod
 │   │   ├── go.sum
@@ -756,12 +756,12 @@ piano-pir-poc/
 │           ├── App.css
 │           ├── main.jsx
 │           ├── providers/
-│           │   └── PianoPIRProvider.jsx
+│           │   └── PlinkoPIRProvider.jsx
 │           ├── components/
 │           │   ├── PrivacyMode.jsx
 │           │   └── PrivacyMode.css
 │           └── clients/
-│               ├── piano-pir-client.js
+│               ├── plinko-pir-client.js
 │               └── plinko-client.js
 │
 ├── scripts/                     # Utility scripts
@@ -807,7 +807,7 @@ This is a research proof-of-concept. For production use:
 - ✅ Task 1: Infrastructure Setup
 - ✅ Task 2: Ethereum Mock (Anvil)
 - ✅ Task 3: Database Generator
-- ✅ Task 4: Piano Hint Generator
+- ✅ Task 4: Plinko Hint Generator
 - ✅ Task 5: Plinko Update Service
 - ✅ Task 6: Plinko PIR Server
 - ✅ Task 7: CDN Mock

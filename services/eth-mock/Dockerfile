@@ -1,5 +1,5 @@
 # Ethereum Mock Service - Foundry Anvil
-# 8,388,608 pre-funded test accounts for Piano PIR PoC
+# 8,388,608 pre-funded test accounts for Plinko PIR PoC
 
 FROM ghcr.io/foundry-rs/foundry:latest
 

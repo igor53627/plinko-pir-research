@@ -155,7 +155,7 @@ export class PlinkoClient {
    * Sync deltas from startBlock to endBlock
    * @param {number} startBlock - First block to sync
    * @param {number} endBlock - Last block to sync
-   * @param {PianoPIRClient} pirClient - PIR client to apply deltas to
+   * @param {PlinkoPIRClient} pirClient - PIR client to apply deltas to
    * @returns {Promise<number>} - Number of deltas applied
    */
   async syncDeltas(startBlock, endBlock, pirClient) {
@@ -207,7 +207,7 @@ export class PlinkoClient {
    * 3. Hint is now updated for changed database entry
    *
    * @param {Object} delta - Delta object {hintSetID, isBackupSet, delta}
-   * @param {PianoPIRClient} pirClient - PIR client with hint
+   * @param {PlinkoPIRClient} pirClient - PIR client with hint
    */
   applyDeltaToHint(delta, pirClient) {
     if (!pirClient.hint) {
