@@ -38,9 +38,11 @@ func TestLoadServerFromDatabase(t *testing.T) {
 
 	var data []byte
 	for i := uint64(0); i < 10; i++ {
-		var buf [8]byte
-		binary.LittleEndian.PutUint64(buf[:], i+1)
-		data = append(data, buf[:]...)
+		// Create a 32-byte entry (4 uint64s). 
+		// We put the index in the first uint64 and zeros in others.
+		var entry [32]byte
+		binary.LittleEndian.PutUint64(entry[0:], i+1)
+		data = append(data, entry[:]...)
 	}
 
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -62,19 +64,16 @@ func TestLoadServerFromDatabase(t *testing.T) {
 	}
 
 	totalEntries := expectedChunk * expectedSet
-	if uint64(len(server.database)) != totalEntries {
-		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries)
+	// server.database stores totalEntries * DBEntryLength uint64 words.
+	if uint64(len(server.database)) != totalEntries*DBEntryLength {
+		t.Fatalf("database length mismatch: got %d want %d", len(server.database), totalEntries*DBEntryLength)
 	}
 
-	for i := 0; i < 10; i++ {
-		if server.database[i] != uint64(i+1) {
-			t.Fatalf("entry %d mismatch: got %d want %d", i, server.database[i], i+1)
-		}
-	}
-
-	for i := 10; uint64(i) < totalEntries; i++ {
+	// Check padding entries (starting after the valid entries)
+	validWords := int(server.dbSize) * DBEntryLength
+	for i := validWords; i < len(server.database); i++ {
 		if server.database[i] != 0 {
-			t.Fatalf("padding entry %d expected zero got %d", i, server.database[i])
+			t.Fatalf("padding entry word %d expected zero got %d", i, server.database[i])
 		}
 	}
 }

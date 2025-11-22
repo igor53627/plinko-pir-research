@@ -223,8 +223,8 @@ func (s *PlinkoPIRServer) HandleFullSetQuery(prfKeyBytes []byte) DBEntry {
 	var prfKey PrfKey128
 	copy(prfKey[:], prfKeyBytes)
 
-	prSet := NewPRSet(prfKey)
-	expandedSet := prSet.Expand(s.setSize, s.chunkSize)
+	prSet := NewPRSet(prfKey, s.setSize, s.chunkSize)
+	expandedSet := prSet.Expand()
 
 	var parity DBEntry
 	for _, id := range expandedSet {
