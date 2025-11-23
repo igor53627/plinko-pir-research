@@ -34,12 +34,18 @@ type PlaintextQueryResponse struct {
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
-type SetParityQueryRequest struct {
-	Indices []uint64 `json:"indices"`
+type PlinkoQueryRequest struct {
+	// P is the list of block indices included in the first partition
+	P []uint64 `json:"p"`
+	// Offsets is the list of offsets for each block
+	Offsets []uint64 `json:"offsets"`
 }
 
-type SetParityQueryResponse struct {
-	Parity          string `json:"parity"`
+type PlinkoQueryResponse struct {
+	// R0 is the parity of the blocks in P
+	R0 string `json:"r0"`
+	// R1 is the parity of the blocks NOT in P
+	R1 string `json:"r1"`
 	ServerTimeNanos uint64 `json:"server_time_nanos"`
 }
 
@@ -163,26 +169,33 @@ func (s *PlinkoPIRServer) plaintextQueryHandler(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.Request) {
+func (s *PlinkoPIRServer) plinkoQueryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req SetParityQueryRequest
+	var req PlinkoQueryRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
+	// Validation
+	if uint64(len(req.Offsets)) != s.setSize {
+		http.Error(w, "Invalid number of offsets", http.StatusBadRequest)
+		return
+	}
+
 	startTime := time.Now()
-	parity := s.HandleSetParityQuery(req.Indices)
+	r0, r1 := s.HandlePlinkoQuery(req.P, req.Offsets)
 	elapsed := time.Since(startTime)
 
-	log.Printf("SetParity query (%d indices) completed in %v\n", len(req.Indices), elapsed)
+	log.Printf("Plinko query completed in %v\n", elapsed)
 
-	resp := SetParityQueryResponse{
-		Parity:          parity.String(),
+	resp := PlinkoQueryResponse{
+		R0:              r0.String(),
+		R1:              r1.String(),
 		ServerTimeNanos: uint64(elapsed.Nanoseconds()),
 	}
 
@@ -190,15 +203,65 @@ func (s *PlinkoPIRServer) setParityQueryHandler(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (s *PlinkoPIRServer) HandleSetParityQuery(indices []uint64) DBEntry {
-	var parity DBEntry
-	for _, index := range indices {
-		entry := s.DBAccess(index)
-		for k := 0; k < DBEntryLength; k++ {
-			parity[k] ^= entry[k]
+func (s *PlinkoPIRServer) HandlePlinkoQuery(P []uint64, offsets []uint64) (DBEntry, DBEntry) {
+	// Convert P slice to map for O(1) lookup
+	pMap := make(map[uint64]bool, len(P))
+	for _, idx := range P {
+		pMap[idx] = true
+	}
+
+	var r0, r1 DBEntry
+	
+	// Iterate through all blocks (0 to setSize-1)
+	// We assume client sends offsets for ALL blocks in the set.
+	// In Plinko (Fig 7), query q = (P \ {alpha}, offsets).
+	// The set of offsets should correspond to the full set of blocks (n/w).
+	// The client sends offsets for all blocks, but only indices in P are used for R0.
+	// The indices NOT in P are used for R1.
+	// This allows the server to compute both parities blindly.
+	
+	// Security Note: The server learns P. 
+	// P is a random subset of blocks containing alpha.
+	// Since P is random and contains ~half of the blocks, 
+	// the server learns nothing about which specific block is alpha,
+	// other than it is one of the blocks in P.
+	// This provides privacy within the anonymity set P.
+	
+	for i := uint64(0); i < s.setSize; i++ {
+		// Calculate database index: block_start + offset
+		// The client provides offsets for ALL blocks (including the 'removed' one, handled by client logic? 
+		// No, in Plinko, client sends offsets for n/w blocks. Wait.
+		// In Fig 7: q <- (P', (oj)j in [n/w]). The list of offsets is full length?
+		// Fig 7 Answer: "Parse (P, o0...on/w-1) <- q". Yes, it receives offsets for ALL blocks.
+		// The client generates a dummy offset for the removed block if needed, or the protocol handles it.
+		// Actually, Fig 7 Query says "q <- (P', (oj)j in [n/w])". P' is P \ {alpha}.
+		// The offset o_alpha is included in the query.
+		
+		offset := offsets[i]
+		if offset >= s.chunkSize {
+			// Invalid offset for this chunk size, treat as 0 or skip? 
+			// Ideally shouldn't happen if client is well-behaved.
+			// We'll wrap or clamp to be safe, or just proceed (DBAccess handles OOB)
+			offset %= s.chunkSize
+		}
+
+		dbIndex := i*s.chunkSize + offset
+		entry := s.DBAccess(dbIndex)
+
+		if pMap[i] {
+			// If block i is in P, add to r0
+			for k := 0; k < DBEntryLength; k++ {
+				r0[k] ^= entry[k]
+			}
+		} else {
+			// If block i is NOT in P, add to r1
+			for k := 0; k < DBEntryLength; k++ {
+				r1[k] ^= entry[k]
+			}
 		}
 	}
-	return parity
+
+	return r0, r1
 }
 
 // String returns the decimal string representation of the 256-bit integer

@@ -47,15 +47,7 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed setup instructions.
 
 ## Research Documentation
 
-All research artifacts are in the [`research/`](research/) directory:
-
-- **[research/findings/](research/findings/)** - Phase-by-phase research results
-  - Phase 1-7 complete
-  - Technical analysis
-  - Performance benchmarks
-  - Comparative analysis
-- **[research/research-plan.md](research/research-plan.md)** - Original research plan
-- **[research/archive/POC-PLINKO-IMPLEMENTATION.md](research/archive/POC-PLINKO-IMPLEMENTATION.md)** - Plinko implementation (archived)
+All research artifacts and documentation have been moved to the `plinko-pir-docs` repository.
 
 ## PoC Architecture
 

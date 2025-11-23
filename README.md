@@ -105,17 +105,17 @@ Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
 
 **Key Innovation**: First PIR system achieving real-time blockchain sync (79× faster updates than SimplePIR)
 
-**[View detailed research findings →](research/FINDINGS.md)**
-
 ## Documentation
 
-- **[Research Findings](research/FINDINGS.md)**: Comprehensive analysis, innovations, and use cases
-- **[API Reference](docs/API_REFERENCE.md)**: Complete API documentation for all services
-- **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**: Common issues and debugging
-- **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment instructions
-- **[Development Guide](DEVELOPMENT.md)**: Detailed development setup and contribution guide
-- **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
-- **[State Syncer README](services/state-syncer/README.md)**: iPRF implementation details
+Documentation has been moved to the `plinko-pir-docs` repository.
+
+- **Research Findings**: Comprehensive analysis, innovations, and use cases
+- **API Reference**: Complete API documentation for all services
+- **Troubleshooting Guide**: Common issues and debugging
+- **Deployment Guide**: Production deployment instructions
+- **Development Guide**: Detailed development setup and contribution guide
+- **Implementation Details**: Technical deep-dive
+- **State Syncer README**: iPRF implementation details
 
 ## Research Paper
 
@@ -125,7 +125,7 @@ Implementation based on:
 > EUROCRYPT 2025
 > [eprint.iacr.org/2024/318](https://eprint.iacr.org/2024/318)
 
-Paper included: [`docs/research/plinko-pir-paper.pdf`](docs/research/plinko-pir-paper.pdf)
+Paper available in the documentation repository.
 
 ## Deployment
 
@@ -141,7 +141,7 @@ make clean                  # tear down containers + volumes
 
 ### Remote Deployment
 
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the fully scripted Vultr deployment workflow powered by `scripts/vultr-deploy.sh`.
+See the Deployment Guide in the documentation repository for the fully scripted Vultr deployment workflow powered by `scripts/vultr-deploy.sh`.
 
 ### Preparing Canonical Database
 

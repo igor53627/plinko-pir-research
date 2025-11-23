@@ -255,6 +255,6 @@ else
     echo "  1. Check service status: docker-compose ps"
     echo "  2. View logs: docker-compose logs"
     echo "  3. Restart services: docker-compose restart"
-    echo "  4. See docs/SERVICE_ADDRESSING.md for detailed help"
+    echo "  4. See documentation for detailed help"
     exit 1
 fi

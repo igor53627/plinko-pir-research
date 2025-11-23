@@ -210,17 +210,12 @@ export class PlinkoClient {
    * @param {PlinkoPIRClient} pirClient - PIR client with hint
    */
   applyDeltaToHint(delta, pirClient) {
-    if (!pirClient.hint) {
-      throw new Error('Hint not available');
+    if (!pirClient.hints) {
+      throw new Error('Hints not available');
     }
 
-    // Calculate offset in hint for this hint set
-    // Offset = header (32 bytes) + hintSetID * chunkSize * 32 bytes
-    const metadata = pirClient.metadata;
-    const offset = 32 + (delta.hintSetID * metadata.chunkSize * 32);
-
-    // Apply XOR delta (delta.delta is already Uint8Array(32))
-    pirClient.applyDelta(delta.delta, offset);
+    // Delegate to PlinkoPIRClient which knows the internal hint structure
+    pirClient.applyHintDelta(delta.hintSetID, delta.delta);
   }
 
   /**

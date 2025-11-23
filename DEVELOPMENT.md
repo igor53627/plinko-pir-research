@@ -367,7 +367,7 @@ go tool cover -html=coverage.out -o coverage.html
 
 ## Deployment
 
-See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed production deployment instructions.
+See the Deployment Guide in the documentation repository for detailed production deployment instructions.
 
 ### Local Development
 
@@ -553,8 +553,7 @@ make start
 ## Additional Resources
 
 - **[README.md](README.md)**: Project overview and quick start
-- **[IMPLEMENTATION.md](IMPLEMENTATION.md)**: Technical deep-dive
-- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**: Production deployment
+- **[Implementation Details](IMPLEMENTATION.md)**: Technical deep-dive
 - **[services/state-syncer/README.md](services/state-syncer/README.md)**: iPRF implementation details
 
 ## Contact

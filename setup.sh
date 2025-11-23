@@ -53,7 +53,6 @@ echo "📁 Creating project structure..."
 mkdir -p src/{rust-analysis,cpp-analysis,ethereum-data}
 mkdir -p tests
 mkdir -p findings
-mkdir -p docs
 mkdir -p benchmarks
 echo "✅ Directory structure created"
 echo ""
@@ -191,7 +190,7 @@ cat > findings/ethereum-mapping.md << 'EOF'
 ## Conclusion
 EOF
 
-cat > docs/setup-notes.md << 'EOF'
+cat > setup-notes.md << 'EOF'
 # Setup Notes and Issues
 
 ## Build Environment
