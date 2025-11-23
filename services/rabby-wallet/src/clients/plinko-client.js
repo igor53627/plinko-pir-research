@@ -11,6 +11,7 @@ export class PlinkoClient {
   constructor(cdnUrl) {
     this.cdnUrl = cdnUrl;
     this.currentBlock = 0;
+    this.manifest = null;
   }
 
   /**
@@ -20,13 +21,32 @@ export class PlinkoClient {
     return this.currentBlock;
   }
 
+  async fetchManifest() {
+    try {
+      const response = await fetch(`${this.cdnUrl}/deltas/manifest.json?t=${Date.now()}`);
+      if (response.ok) {
+        this.manifest = await response.json();
+        return this.manifest;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch delta manifest:', err);
+    }
+    return null;
+  }
+
   /**
    * Discover latest delta block number
    * @returns {Promise<number>} - Latest block with delta file
    */
   async getLatestDeltaBlock() {
+    // Try manifest first
+    const manifest = await this.fetchManifest();
+    if (manifest && manifest.latestBlock) {
+      return manifest.latestBlock;
+    }
+
     try {
-      // Fetch delta directory listing
+      // Fetch delta directory listing (fallback)
       const response = await fetch(`${this.cdnUrl}/deltas/`);
       const html = await response.text();
 
@@ -53,8 +73,21 @@ export class PlinkoClient {
    * @returns {Promise<Uint8Array>} - Delta data
    */
   async downloadDelta(blockNumber) {
-    const filename = `delta-${blockNumber.toString().padStart(6, '0')}.bin`;
-    const url = `${this.cdnUrl}/deltas/${filename}`;
+    // Check manifest for CID
+    let url;
+    if (this.manifest && this.manifest.deltas) {
+        const deltaInfo = this.manifest.deltas.find(d => d.block === blockNumber);
+        if (deltaInfo && deltaInfo.cid) {
+            url = `${this.cdnUrl}/ipfs/${deltaInfo.cid}`;
+            // console.log(`🌐 Using IPFS for delta ${blockNumber}: ${deltaInfo.cid}`);
+        }
+    }
+
+    if (!url) {
+        const filename = `delta-${blockNumber.toString().padStart(6, '0')}.bin`;
+        url = `${this.cdnUrl}/deltas/${filename}`;
+    }
+
     const CACHE_NAME = 'plinko-deltas-v1';
 
     // Check if Cache API is supported (requires HTTPS or localhost)
@@ -98,17 +131,35 @@ export class PlinkoClient {
   }
 
   /**
-   * Parse delta file format
-   *
-   * Format:
-   * [0:8]   Delta count (uint64)
-   * [8:16]  Reserved (uint64)
-   * Then for each delta (48 bytes):
-   *   [0:8]   HintSetID (uint64)
-   *   [8:16]  IsBackupSet (uint64)
-   *   [16:48] Delta value (4 * uint64)
+   * Parse delta file(s)
+   * Supports single delta file or concatenated bundle
    */
-  parseDelta(deltaData) {
+  parseDeltas(buffer) {
+    const allDeltas = [];
+    let offset = 0;
+    const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+    while (offset < buffer.byteLength) {
+        if (buffer.byteLength - offset < 16) break;
+        
+        const count = Number(view.getBigUint64(offset, true));
+        const size = 16 + count * 48;
+        
+        if (offset + size > buffer.byteLength) {
+            console.warn("Truncated delta bundle");
+            break;
+        }
+        
+        const fileData = new Uint8Array(buffer.buffer, buffer.byteOffset + offset, size);
+        const deltas = this._parseSingleDeltaFile(fileData);
+        allDeltas.push(...deltas);
+        
+        offset += size;
+    }
+    return allDeltas;
+  }
+
+  _parseSingleDeltaFile(deltaData) {
     if (!deltaData || !deltaData.buffer) {
       console.warn('Invalid delta data');
       return [];
@@ -160,43 +211,95 @@ export class PlinkoClient {
    */
   async syncDeltas(startBlock, endBlock, pirClient) {
     let totalDeltas = 0;
+    let current = startBlock;
 
-    for (let block = startBlock; block <= endBlock; block++) {
-      try {
-        // Download delta
-        console.log(`📥 Downloading delta-${block.toString().padStart(6, '0')}.bin...`);
-        const deltaData = await this.downloadDelta(block);
-
-        // Parse delta
-        const deltas = this.parseDelta(deltaData);
-
-        // Apply each delta to hint
-        for (const delta of deltas) {
-          this.applyDeltaToHint(delta, pirClient);
-          totalDeltas++;
+    while (current <= endBlock) {
+        // Check for bundle
+        const bundle = this.findBundle(current, endBlock);
+        
+        if (bundle) {
+             try {
+                console.log(`📦 Downloading bundle for blocks ${bundle.startBlock}-${bundle.endBlock}...`);
+                const data = await this.downloadBundle(bundle);
+                const deltas = this.parseDeltas(data);
+                
+                for (const delta of deltas) {
+                    this.applyDeltaToHint(delta, pirClient);
+                    totalDeltas++;
+                }
+                
+                console.log(`✅ Bundle applied (${deltas.length} deltas)`);
+                current = bundle.endBlock + 1;
+                this.currentBlock = bundle.endBlock;
+                localStorage.setItem('plinko_current_block', String(bundle.endBlock));
+                continue;
+             } catch (err) {
+                 console.warn(`Bundle download failed, falling back to individual deltas: ${err.message}`);
+                 // Fallback to individual loop
+             }
         }
 
-        // Log successful application
-        if (deltas.length > 0) {
-          console.log(`✅ Block ${block}: Applied ${deltas.length} delta(s)`);
-        } else {
-          console.log(`⏭️  Block ${block}: Empty (0 deltas)`);
-        }
+        // Individual delta
+        try {
+            // Download delta
+            // console.log(`📥 Downloading delta-${current.toString().padStart(6, '0')}.bin...`);
+            const deltaData = await this.downloadDelta(current);
 
-        // Update current block
-        this.currentBlock = block;
+            // Parse delta
+            const deltas = this.parseDeltas(deltaData);
 
-        // Save progress to localStorage
-        localStorage.setItem('plinko_current_block', String(block));
+            // Apply each delta to hint
+            for (const delta of deltas) {
+              this.applyDeltaToHint(delta, pirClient);
+              totalDeltas++;
+            }
+            
+            // Only log every 10 blocks to reduce noise during catchup
+            if (current % 10 === 0) {
+                 console.log(`✅ Synced up to block ${current}`);
+            }
+
+            // Update current block
+            this.currentBlock = current;
+
+            // Save progress to localStorage
+            localStorage.setItem('plinko_current_block', String(current));
 
       } catch (err) {
-        console.error(`❌ Failed to sync delta for block ${block}:`, err);
+        // console.error(`❌ Failed to sync delta for block ${current}:`, err);
         // Continue with next block (non-fatal)
       }
+      current++;
     }
 
     return totalDeltas;
   }
+
+  findBundle(start, end) {
+      if (!this.manifest || !this.manifest.bundles) return null;
+      // Find a bundle that starts at 'start' and fits within 'end'
+      // Prefer largest bundle?
+      return this.manifest.bundles.find(b => b.startBlock === start && b.endBlock <= end);
+  }
+
+  async downloadBundle(bundle) {
+      // Prefer IPFS if available?
+      let url;
+      if (bundle.cid) {
+          // Use CDN proxy for IPFS
+          url = `${this.cdnUrl}/ipfs/${bundle.cid}`;
+      } else {
+          // Construct direct URL
+          // Bundle filename convention: bundle-{start}-{end}.bin
+          const filename = `bundle-${String(bundle.startBlock).padStart(6,'0')}-${String(bundle.endBlock).padStart(6,'0')}.bin`;
+          url = `${this.cdnUrl}/deltas/${filename}`;
+      }
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to download bundle: ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+  }
+
 
   /**
    * Apply single delta to hint using XOR

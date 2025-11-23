@@ -119,6 +119,8 @@ func main() {
 		log.Fatalf("create snapshot dir: %v", err)
 	}
 
+	bundler := NewDeltaBundler(cfg, ipfsPublisher)
+
 	if err := ensureAddressMappingPublished(cfg.AddressMappingPath, cfg.PublicAddressMappingPath()); err != nil {
 		log.Fatalf("publish address-mapping: %v", err)
 	}
@@ -188,6 +190,10 @@ func main() {
 		if err := saveDelta(deltaPath, deltas); err != nil {
 			log.Printf("save delta failed: %v", err)
 			metrics.RecordError(err)
+		} else {
+			if err := bundler.PublishDelta(nextBlock, deltaPath); err != nil {
+				log.Printf("bundler error: %v", err)
+			}
 		}
 
 		if cfg.SnapshotEvery > 0 && nextBlock%cfg.SnapshotEvery == 0 {

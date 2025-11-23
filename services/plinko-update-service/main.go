@@ -39,6 +39,7 @@ type PlinkoUpdateService struct {
 	client          *ethclient.Client
 	database        []uint64 // In-memory database
 	updateManager   *PlinkoUpdateManager
+	bundler         *DeltaBundler
 	blockHeight     uint64
 	deltasGenerated uint64
 	cfg             Config
@@ -107,10 +108,17 @@ func main() {
 		log.Fatalf("Failed to create delta directory: %v", err)
 	}
 
+	// Initialize Delta Bundler
+	bundler, err := NewDeltaBundler(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize delta bundler: %v", err)
+	}
+
 	// Create service
 	service := &PlinkoUpdateService{
 		database:        database,
 		updateManager:   pm,
+		bundler:         bundler,
 		blockHeight:     0,
 		deltasGenerated: 0,
 		cfg:             cfg,
@@ -274,6 +282,12 @@ func (s *PlinkoUpdateService) processBlock(ctx context.Context, blockNumber uint
 		blockNumber, len(updates), len(deltas),
 		updateDuration, blockDuration)
 	recordBlock(blockNumber, len(updates), blockDuration)
+
+	// Process bundling (and update manifest)
+	// We now call PublishDelta which handles manifest update and triggers bundling if needed
+	if err := s.bundler.PublishDelta(blockNumber, deltaPath); err != nil {
+		log.Printf("⚠️ Bundler error for block %d: %v\n", blockNumber, err)
+	}
 
 	return nil
 }

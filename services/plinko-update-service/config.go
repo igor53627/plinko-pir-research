@@ -29,6 +29,8 @@ type Config struct {
 	RPCURL              string
 	RPCToken            string
 	UseSimulated        bool
+	IPFSAPI             string
+	IPFSGateway         string
 }
 
 func LoadConfig() Config {
@@ -117,6 +119,14 @@ func LoadConfig() Config {
 		if parsed, ok := parseBool(v); ok {
 			cfg.UseSimulated = parsed
 		}
+	}
+
+	if v := firstNonEmpty(os.Getenv("PLINKO_STATE_IPFS_API"), os.Getenv("IPFS_API")); v != "" {
+		cfg.IPFSAPI = v
+	}
+
+	if v := firstNonEmpty(os.Getenv("PLINKO_STATE_IPFS_GATEWAY"), os.Getenv("IPFS_GATEWAY")); v != "" {
+		cfg.IPFSGateway = v
 	}
 
 	cfg.DatabasePath = strings.TrimSpace(cfg.DatabasePath)
