@@ -75,6 +75,8 @@ export class PlinkoPIRClient {
     if (browserCrypto) {
         browserCrypto.getRandomValues(masterKey);
     } else {
+        // Fallback for non-secure environments (e.g. tests without crypto)
+        console.warn("Using insecure random for master key");
         for(let i=0; i<32; i++) masterKey[i] = Math.floor(Math.random() * 256);
     }
     this.masterKey = masterKey;
@@ -195,8 +197,14 @@ export class PlinkoPIRClient {
         throw new Error("No hint set found for this element (probabilistic failure, try refreshing hints)");
     }
     
-    // Pick random candidate
-    const hintIdx = candidates[Math.floor(Math.random() * candidates.length)];
+    // Pick random candidate securely
+    const randBuf = new Uint32Array(1);
+    if (browserCrypto) {
+        browserCrypto.getRandomValues(randBuf);
+    } else {
+        randBuf[0] = Math.floor(Math.random() * 0xFFFFFFFF);
+    }
+    const hintIdx = candidates[randBuf[0] % candidates.length];
     
     // 2. Construct Query
     // Reconstruct the set P and offsets
@@ -242,7 +250,14 @@ export class PlinkoPIRClient {
     if (validCandidates.length === 0) {
         throw new Error("No valid hint found (alpha not in P)");
     }
-    const selectedHintIdx = validCandidates[Math.floor(Math.random() * validCandidates.length)];
+
+    // Select securely
+    if (browserCrypto) {
+        browserCrypto.getRandomValues(randBuf);
+    } else {
+        randBuf[0] = Math.floor(Math.random() * 0xFFFFFFFF);
+    }
+    const selectedHintIdx = validCandidates[randBuf[0] % validCandidates.length];
     
     // Re-generate P and offsets for selected hint
     const finalP = [];
@@ -299,12 +314,14 @@ export class PlinkoPIRClient {
   }
   
   isBlockInP(hintIdx, blockIdx) {
-      // Simple deterministic check
-      // hash(hintIdx, blockIdx) % 2 == 0
-      // Use a simple LCG or similar
-      let h = BigInt(hintIdx) * 123456789n + BigInt(blockIdx) * 987654321n;
-      h = (h ^ (h >> 13n)) * 127n;
-      return (h % 2n) === 0n;
+      // MurmurHash3 64-bit finalizer mixing function for better distribution
+      let h = BigInt(hintIdx) ^ (BigInt(blockIdx) << 32n);
+      h ^= h >> 33n;
+      h *= 0xff51afd7ed558ccdn;
+      h ^= h >> 33n;
+      h *= 0xc4ceb9fe1a85ec53n;
+      h ^= h >> 33n;
+      return (h & 1n) === 0n;
   }
 
   readHint(hintIdx) {
