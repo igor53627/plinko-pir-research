@@ -37,7 +37,7 @@ open http://localhost:5173
 
 ```
 ┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
-│  Wallet Client  │ ───▶ │  PIR Server      │ ───▶ │  State Syncer   │
+│  Rabby Wallet   │ ───▶ │  PIR Server      │ ───▶ │  State Syncer   │
 │  (Privacy Mode) │ ◀─── │  (Query Handler) │ ◀─── │  (iPRF Updates) │
 └─────────────────┘      └──────────────────┘      └─────────────────┘
                                                             │
@@ -52,10 +52,10 @@ open http://localhost:5173
 | Service | Purpose | Technology |
 |---------|---------|------------|
 | **eth-mock** | Simulated Ethereum node | Anvil (Foundry) |
-| **plinko-update-service** | Monitors blocks, generates deltas | Go + WebSocket |
+| **plinko-update-service** | Monitors blocks, generates deltas (Deprecated) | Go + WebSocket |
 | **state-syncer** | Streams Hypersync blocks → snapshots/deltas | Go + Hypersync RPC |
 | **plinko-pir-server** | Handles PIR queries | Plinko protocol |
-| **cdn** | Distributes snapshot packages/deltas + proxies IPFS | Nginx / CloudFlare R2 |
+| **cdn-mock** | Distributes snapshot packages/deltas + proxies IPFS | Nginx / CloudFlare R2 |
 | **rabby-wallet** | Privacy-enhanced wallet UI | React + Vite |
 | **ipfs** | Local Kubo daemon (pin snapshots) | ipfs/kubo |
 
