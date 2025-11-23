@@ -78,19 +78,19 @@ func (b *DeltaBundler) createBundle(startBlock, endBlock uint64) error {
 	for i := startBlock; i <= endBlock; i++ {
 		filename := fmt.Sprintf("delta-%06d.bin", i)
 		path := filepath.Join(b.cfg.DeltaDir, filename)
-		
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("missing delta file %s: %w", filename, err)
 		}
-		
+
 		bundleData.Write(data)
 	}
 
 	// Write bundle file
 	bundleFilename := fmt.Sprintf("bundle-%06d-%06d.bin", startBlock, endBlock)
 	bundlePath := filepath.Join(b.cfg.DeltaDir, bundleFilename)
-	
+
 	if err := os.WriteFile(bundlePath, bundleData.Bytes(), 0644); err != nil {
 		return fmt.Errorf("failed to write bundle file: %w", err)
 	}
@@ -179,7 +179,7 @@ func (b *DeltaBundler) addDeltaToManifest(block uint64, cid string) error {
 	}
 
 	manifest.LatestBlock = b.latestBlock
-	
+
 	// Save manifest BEFORE triggering bundle creation
 	if err := b.writeManifest(manifest); err != nil {
 		return err
@@ -189,7 +189,7 @@ func (b *DeltaBundler) addDeltaToManifest(block uint64, cid string) error {
 	if block > 0 && block%BundleSize == 0 {
 		startBlock := block - BundleSize + 1
 		endBlock := block
-		
+
 		if err := b.createBundle(startBlock, endBlock); err != nil {
 			log.Printf("Failed to create bundle %d-%d: %v", startBlock, endBlock, err)
 			// Do not return error, as delta was successfully added
@@ -227,6 +227,9 @@ func (b *DeltaBundler) readManifest() (Manifest, error) {
 		}
 		return manifest, fmt.Errorf("failed to read manifest: %w", err)
 	}
+	if len(data) == 0 {
+		return manifest, nil
+	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return manifest, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
@@ -235,7 +238,7 @@ func (b *DeltaBundler) readManifest() (Manifest, error) {
 
 func (b *DeltaBundler) writeManifest(manifest Manifest) error {
 	manifestPath := filepath.Join(b.cfg.DeltaDir, "manifest.json")
-	
+
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal manifest: %w", err)
@@ -248,7 +251,7 @@ func (b *DeltaBundler) writeManifest(manifest Manifest) error {
 		return fmt.Errorf("failed to create temp manifest file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	
+
 	// Clean up in case of error before rename
 	defer func() {
 		tmpFile.Close()
@@ -270,6 +273,6 @@ func (b *DeltaBundler) writeManifest(manifest Manifest) error {
 	if err := os.Rename(tmpPath, manifestPath); err != nil {
 		return fmt.Errorf("failed to rename manifest file: %w", err)
 	}
-	
+
 	return nil
 }
