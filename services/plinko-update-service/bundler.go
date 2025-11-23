@@ -284,6 +284,9 @@ func (b *DeltaBundler) writeManifest(manifest Manifest) error {
 	if _, err := tmpFile.Write(data); err != nil {
 		return fmt.Errorf("failed to write to temp manifest file: %w", err)
 	}
+	if err := tmpFile.Chmod(0644); err != nil {
+		return fmt.Errorf("failed to chmod temp manifest file: %w", err)
+	}
 	if err := tmpFile.Sync(); err != nil {
 		return fmt.Errorf("failed to sync temp manifest file: %w", err)
 	}
