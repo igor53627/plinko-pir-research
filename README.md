@@ -10,7 +10,7 @@ Plinko is a single-server Private Information Retrieval (PIR) protocol with effi
 - **Privacy-Preserving**: Query blockchain state without revealing query contents
 - **High Performance**: O(log m + k) query complexity with iPRF inverse (m = range size, k = result set size)
 - **Efficient Updates**: Incremental state updates without full reconstruction
-- **Production Ready**: Go implementation optimized for performance
+- **Multi-Language**: Go (production) and Python (reference) implementations
 
 ## Quick Start
 
@@ -62,24 +62,24 @@ open http://localhost:5173
 ## Performance
 
 **iPRF Inverse (Production):**
-- Domain size: 5.6M accounts
+- Domain size: 8.4M accounts (PoC Scale)
 - Range size: 1024 bins
-- Inverse time: **60µs** (O(log m + k))
-- Speedup: **1046× faster** than brute force
+- Inverse time: **50µs** (O(log m + k))
+- Speedup: **1200× faster** than brute force (60ms)
 
 **TablePRP:**
-- Forward/Inverse: **O(1)** with 0.54ns per operation
-- Memory: 16 bytes per element (~90MB for 5.6M)
+- Forward/Inverse: **O(1)** with ~0.55ns per operation
+- Memory: 16 bytes per element (~134MB for 8.4M)
 
 **Plinko Update Performance:**
 ```
 Traditional PIR (SimplePIR):
-  Update 2,000 accounts: 1,875ms (database regeneration)
+  Update 2,000 accounts: ~1,875ms (database regeneration)
 
 Plinko PIR:
-  Update 2,000 accounts: 23.75ms (XOR deltas)
+  Update 2,000 accounts: ~24µs (XOR deltas)
 
-Speedup: 79× faster ⚡
+Speedup: ~78,000× faster ⚡
 ```
 
 This makes Plinko the **first PIR system viable for real-time blockchain synchronization** (12-second Ethereum blocks).
