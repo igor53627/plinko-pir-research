@@ -109,11 +109,6 @@ Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
 
 Documentation has been moved to the `plinko-pir-docs` repository.
 
-- **Research Findings**: Comprehensive analysis, innovations, and use cases
-- **API Reference**: Complete API documentation for all services
-- **Troubleshooting Guide**: Common issues and debugging
-- **Deployment Guide**: Production deployment instructions
-- **Development Guide**: Detailed development setup and contribution guide
 - **Implementation Details**: Technical deep-dive
 - **State Syncer README**: iPRF implementation details
 
