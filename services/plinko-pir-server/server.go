@@ -213,6 +213,20 @@ func (s *PlinkoPIRServer) HandlePlinkoQuery(P []uint64, offsets []uint64) (DBEnt
 	var r0, r1 DBEntry
 	
 	// Iterate through all blocks (0 to setSize-1)
+	// We assume client sends offsets for ALL blocks in the set.
+	// In Plinko (Fig 7), query q = (P \ {alpha}, offsets).
+	// The set of offsets should correspond to the full set of blocks (n/w).
+	// The client sends offsets for all blocks, but only indices in P are used for R0.
+	// The indices NOT in P are used for R1.
+	// This allows the server to compute both parities blindly.
+	
+	// Security Note: The server learns P. 
+	// P is a random subset of blocks containing alpha.
+	// Since P is random and contains ~half of the blocks, 
+	// the server learns nothing about which specific block is alpha,
+	// other than it is one of the blocks in P.
+	// This provides privacy within the anonymity set P.
+	
 	for i := uint64(0); i < s.setSize; i++ {
 		// Calculate database index: block_start + offset
 		// The client provides offsets for ALL blocks (including the 'removed' one, handled by client logic? 
