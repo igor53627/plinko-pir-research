@@ -87,7 +87,7 @@ This PoC consists of 7 services orchestrated with Docker Compose:
 
 The CDN mock also exposes `/ipfs/<cid>` by proxying to the bundled `ipfs/kubo` gateway so browsers can fetch snapshot chunks referenced in `manifest.json` even without a native IPFS transport; production deployments should reproduce this routing (e.g., `cdn.example.com/ipfs/<cid>`).
 
-See [docs/SERVICE_ADDRESSING.md](docs/SERVICE_ADDRESSING.md) for detailed networking configuration, including custom domain setup.
+See the Service Addressing Guide in the documentation repository for detailed networking configuration, including custom domain setup.
 
 ### System Diagram
 
