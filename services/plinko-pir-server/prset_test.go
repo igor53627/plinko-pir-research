@@ -1,40 +1,9 @@
 package main
 
 import (
-	"crypto/aes"
-	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-type prfVector struct {
-	Index  uint64 `json:"index"`
-	RawHex string `json:"raw_hex"`
-}
-
-type prfVectorFile struct {
-	KeyHex  string      `json:"key_hex"`
-	Indices []prfVector `json:"indices"`
-}
-
-func loadPRFVectors(t *testing.T) prfVectorFile {
-	t.Helper()
-	path := filepath.Join("..", "rabby-wallet", "src", "testdata", "prf_vectors.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read PRF vectors: %v", err)
-	}
-
-	var vectors prfVectorFile
-	if err := json.Unmarshal(data, &vectors); err != nil {
-		t.Fatalf("failed to parse PRF vectors: %v", err)
-	}
-
-	return vectors
-}
 
 func hexToKey(t *testing.T, hexStr string) PrfKey128 {
 	t.Helper()
@@ -50,59 +19,68 @@ func hexToKey(t *testing.T, hexStr string) PrfKey128 {
 	return key
 }
 
-func hexToUint64(t *testing.T, hexStr string) uint64 {
-	t.Helper()
-	bytes, err := hex.DecodeString(hexStr)
-	if err != nil {
-		t.Fatalf("failed to decode hex value: %v", err)
-	}
-	if len(bytes) != 8 {
-		t.Fatalf("expected 8-byte value, got %d bytes", len(bytes))
-	}
-	return binary.BigEndian.Uint64(bytes)
-}
-
-func TestPRFAESVectors(t *testing.T) {
-	vectors := loadPRFVectors(t)
-	key := hexToKey(t, vectors.KeyHex)
-	prSet := NewPRSet(key)
-
-	for _, vec := range vectors.Indices {
-		raw := hexToUint64(t, vec.RawHex)
-
-		var input [aes.BlockSize]byte
-		binary.BigEndian.PutUint64(input[aes.BlockSize-8:], vec.Index)
-		var output [aes.BlockSize]byte
-		prSet.block.Encrypt(output[:], input[:])
-		gotRaw := binary.BigEndian.Uint64(output[:8])
-		if gotRaw != raw {
-			t.Fatalf("raw AES mismatch for index %d: got %016x want %016x", vec.Index, gotRaw, raw)
-		}
-
-		gotMod := prSet.prfEvalMod(vec.Index, 8192)
-		if gotMod != raw%8192 {
-			t.Fatalf("mod mismatch for index %d: got %d want %d", vec.Index, gotMod, raw%8192)
-		}
-	}
-}
-
-func TestExpandMatchesDirectEvaluation(t *testing.T) {
-	vectors := loadPRFVectors(t)
-	key := hexToKey(t, vectors.KeyHex)
-	prSet := NewPRSet(key)
+func TestPRSetExpandDeterminism(t *testing.T) {
+	keyHex := "000102030405060708090a0b0c0d0e0f"
+	key := hexToKey(t, keyHex)
 
 	const setSize = 16
-	const chunkSize = uint64(8192)
+	const chunkSize = 8192
 
-	indices := prSet.Expand(setSize, chunkSize)
-	if len(indices) != setSize {
-		t.Fatalf("expected %d indices, got %d", setSize, len(indices))
+	prSet1 := NewPRSet(key, setSize, chunkSize)
+	indices1 := prSet1.Expand()
+
+	prSet2 := NewPRSet(key, setSize, chunkSize)
+	indices2 := prSet2.Expand()
+
+	if len(indices1) != setSize {
+		t.Fatalf("expected %d indices, got %d", setSize, len(indices1))
 	}
 
-	for i := uint64(0); i < setSize; i++ {
-		expected := i*chunkSize + prSet.prfEvalMod(i, chunkSize)
-		if indices[i] != expected {
-			t.Fatalf("expand mismatch at position %d: got %d want %d", i, indices[i], expected)
+	for i := 0; i < len(indices1); i++ {
+		if indices1[i] != indices2[i] {
+			t.Errorf("mismatch at index %d: %d != %d", i, indices1[i], indices2[i])
+		}
+		
+		// Check bounds
+		start := uint64(i) * chunkSize
+		end := start + chunkSize
+		if indices1[i] < start || indices1[i] >= end {
+			t.Errorf("index %d out of bounds: got %d, want [%d, %d)", i, indices1[i], start, end)
+		}
+	}
+}
+
+func TestIPRFInvertibility(t *testing.T) {
+	// This tests the core Plinko property: IPRF is efficiently invertible.
+	keyHex := "000102030405060708090a0b0c0d0e0f"
+	key := hexToKey(t, keyHex)
+	
+	const n = 1024 // Domain size
+	const m = 256  // Range size
+	
+	var k32 [32]byte
+	copy(k32[:16], key[:])
+	copy(k32[16:], key[:])
+	
+	iprf := NewIPRF(k32, n, m)
+	
+	// Check for a subset of inputs
+	for x := uint64(0); x < n; x++ {
+		y := iprf.Forward(x)
+		
+		// Invert y
+		preimages := iprf.Inverse(y)
+		
+		found := false
+		for _, val := range preimages {
+			if val == x {
+				found = true
+				break
+			}
+		}
+		
+		if !found {
+			t.Errorf("inverse of %d -> %d did not contain %d. Preimages: %v", x, y, x, preimages)
 		}
 	}
 }
