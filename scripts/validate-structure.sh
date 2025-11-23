@@ -21,7 +21,7 @@ echo "✓ Phase 2: PoC Promoted to Root"
 [[ -f ".env.example" ]] && echo "  ✓ .env.example exists"
 [[ -f "Makefile" ]] && echo "  ✓ Makefile exists"
 [[ -f "docker-compose.yml" ]] && echo "  ✓ docker-compose.yml exists"
-[[ -f "IMPLEMENTATION.md" ]] && echo "  ✓ IMPLEMENTATION.md exists"
+[[ ! -f "IMPLEMENTATION.md" ]] && echo "  ✓ IMPLEMENTATION.md removed (moved to docs repo)"
 [[ ! -d "plinko-pir-poc" ]] && echo "  ✓ plinko-pir-poc/ removed"
 
 # Phase 3: Documentation Updated
