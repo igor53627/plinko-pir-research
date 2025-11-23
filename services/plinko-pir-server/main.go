@@ -28,7 +28,7 @@ func main() {
 
 	http.HandleFunc("/health", corsMiddleware(server.healthHandler))
 	http.HandleFunc("/query/plaintext", corsMiddleware(server.plaintextQueryHandler))
-	http.HandleFunc("/query/setparity", corsMiddleware(server.setParityQueryHandler))
+	http.HandleFunc("/query/plinko", corsMiddleware(server.plinkoQueryHandler))
 
 	addr := cfg.ListenAddress()
 	log.Printf("🚀 Plinko PIR Server listening on %s\n", addr)
