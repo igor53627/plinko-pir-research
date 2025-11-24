@@ -94,17 +94,6 @@ go test -v ./...
 # 87/87 tests passing (100%)
 ```
 
-## Research Findings
-
-Comprehensive viability analysis of Plinko PIR for Ethereum JSON-RPC privacy:
-
-- **eth_getBalance**: ✅ Production viable (5.6M addresses, 5ms queries, $0.09-0.14/user/month)
-- **eth_getLogs (Per-User)**: ✅ Highly viable (30K logs/user, 7.7 MB database)
-- **eth_getLogs (Rolling Window)**: ✅ Feasible (50K blocks, 6.4-51 GB with compression)
-- **eth_call**: ❌ Not viable (storage explosion: 10B+ slots)
-
-**Key Innovation**: First PIR system achieving real-time blockchain sync (79× faster updates than SimplePIR)
-
 ## Documentation
 
 Documentation has been moved to the `plinko-pir-docs` repository.
