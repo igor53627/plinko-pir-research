@@ -44,40 +44,88 @@ export class PlinkoPIRClient {
       throw new Error('Snapshot manifest missing database.bin entry');
     }
 
-    const snapshotUrls = this.buildSnapshotUrls(databaseFile);
-    const snapshotBytes = await this.downloadFromCandidates(
-      snapshotUrls,
-      `snapshot database`,
-      databaseFile.size,
-      (percent) => onProgress && onProgress('database', percent)
-    );
-
-    await this.verifySnapshotHash(snapshotBytes, databaseFile.sha256 || databaseFile.SHA256);
-
-    console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
-    if (onProgress) onProgress('hint_generation', 0);
+    const expectedHash = databaseFile.sha256 || databaseFile.SHA256;
     
-    // Generate hints from snapshot
-    await this.generateHints(snapshotBytes, onProgress);
+    // Try to load from cache first using hash as key
+    const cachedSnapshot = await this.loadFromCache('snapshot-db', expectedHash);
+    let snapshotBytes;
     
-    if (onProgress) onProgress('hint_generation', 100);
-    console.log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
+    if (cachedSnapshot) {
+      console.log(`📦 Loaded snapshot from cache (hash: ${expectedHash?.slice(0, 8)}...)`);
+      if (onProgress) onProgress('database', 100);
+      snapshotBytes = cachedSnapshot;
+    } else {
+      const snapshotUrls = this.buildSnapshotUrls(databaseFile);
+      snapshotBytes = await this.downloadFromCandidates(
+        snapshotUrls,
+        `snapshot database`,
+        databaseFile.size,
+        (percent) => onProgress && onProgress('database', percent)
+      );
+
+      await this.verifySnapshotHash(snapshotBytes, expectedHash);
+      
+      // Save to cache with hash as key
+      await this.saveToCache('snapshot-db', expectedHash, snapshotBytes);
+    }
+
+    // Try to load cached hints (keyed by snapshot hash + master key hash)
+    const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
+    const hintsCacheKey = `hints-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+    const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
+    
+    if (cachedHints) {
+      console.log(`📦 Loaded hints from cache`);
+      this.hints = cachedHints;
+      if (onProgress) onProgress('hint_generation', 100);
+    } else {
+      console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
+      if (onProgress) onProgress('hint_generation', 0);
+      
+      // Generate hints from snapshot
+      await this.generateHints(snapshotBytes, onProgress);
+      
+      if (onProgress) onProgress('hint_generation', 100);
+      console.log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
+      
+      // Cache the hints
+      await this.saveToCache('plinko-hints', hintsCacheKey, this.hints);
+    }
 
     // Download address-mapping.bin
     await this.downloadAddressMapping((percent) => onProgress && onProgress('address_mapping', percent));
   }
 
   initializeKeys() {
-    // In a real app, derive from a user secret or random seed.
-    // For this PoC, we generate random keys. 
-    // Ideally, these should be persisted to avoid re-downloading hints.
-    const masterKey = new Uint8Array(32);
-    if (browserCrypto) {
+    // Try to load persisted master key, or generate new one
+    const MASTER_KEY_STORAGE = 'plinko-master-key';
+    let masterKey;
+    
+    try {
+      const stored = localStorage.getItem(MASTER_KEY_STORAGE);
+      if (stored) {
+        masterKey = new Uint8Array(JSON.parse(stored));
+        console.log(`🔑 Loaded master key from storage`);
+      }
+    } catch (e) {
+      console.warn('Failed to load master key from storage:', e);
+    }
+    
+    if (!masterKey || masterKey.length !== 32) {
+      masterKey = new Uint8Array(32);
+      if (browserCrypto) {
         browserCrypto.getRandomValues(masterKey);
-    } else {
-        // Fallback for non-secure environments (e.g. tests without crypto)
+      } else {
         console.warn("Using insecure random for master key");
         for(let i=0; i<32; i++) masterKey[i] = Math.floor(Math.random() * 256);
+      }
+      // Persist the new key
+      try {
+        localStorage.setItem(MASTER_KEY_STORAGE, JSON.stringify(Array.from(masterKey)));
+        console.log(`🔑 Generated and saved new master key`);
+      } catch (e) {
+        console.warn('Failed to persist master key:', e);
+      }
     }
     this.masterKey = masterKey;
 
@@ -513,6 +561,33 @@ export class PlinkoPIRClient {
     return Array.from(bytes)
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
+  }
+
+  async loadFromCache(cacheName, key) {
+    if (typeof caches === 'undefined') return null;
+    try {
+      const cache = await caches.open(cacheName);
+      const response = await cache.match(key);
+      if (response) {
+        const buffer = await response.arrayBuffer();
+        return new Uint8Array(buffer);
+      }
+    } catch (e) {
+      console.warn(`Cache load failed for ${key}:`, e);
+    }
+    return null;
+  }
+
+  async saveToCache(cacheName, key, data) {
+    if (typeof caches === 'undefined') return;
+    try {
+      const cache = await caches.open(cacheName);
+      const response = new Response(data);
+      await cache.put(key, response);
+      console.log(`💾 Cached ${key} (${(data.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+    } catch (e) {
+      console.warn(`Cache save failed for ${key}:`, e);
+    }
   }
 
   async downloadAddressMapping(onProgress) {
