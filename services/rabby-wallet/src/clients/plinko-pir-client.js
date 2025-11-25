@@ -152,7 +152,8 @@ export class PlinkoPIRClient {
         const iprf = this.iprfs[alpha];
         const hintIndices = iprf.inverse(beta);
         
-        for (const hintIdx of hintIndices) {
+        for (const hintIdxBig of hintIndices) {
+            const hintIdx = Number(hintIdxBig);
             // Only include this element if the block (alpha) is in the partition P for this hint
             if (this.isBlockInP(hintIdx, alpha)) {
                 const hOffset = hintIdx * 32;
@@ -204,7 +205,7 @@ export class PlinkoPIRClient {
     } else {
         randBuf[0] = Math.floor(Math.random() * 0xFFFFFFFF);
     }
-    const hintIdx = candidates[randBuf[0] % candidates.length];
+    const hintIdx = Number(candidates[randBuf[0] % candidates.length]);
     
     // 2. Construct Query
     // Reconstruct the set P and offsets
@@ -245,8 +246,8 @@ export class PlinkoPIRClient {
     // If alpha not in P, then H[j] is independent of D[alpha].
     // So we MUST select a hint where alpha IS in P.
     
-    // Filter candidates for alpha \in P
-    const validCandidates = candidates.filter(h => this.isBlockInP(h, alpha));
+    // Filter candidates for alpha \in P (convert BigInt to Number)
+    const validCandidates = candidates.map(h => Number(h)).filter(h => this.isBlockInP(h, alpha));
     if (validCandidates.length === 0) {
         throw new Error("No valid hint found (alpha not in P)");
     }
@@ -591,7 +592,8 @@ export class PlinkoPIRClient {
 
       const view = new DataView(this.hints.buffer);
 
-      for (const hintIdx of hintIndices) {
+      for (const hintIdxBig of hintIndices) {
+          const hintIdx = Number(hintIdxBig);
           // Only update hint if the block (alpha) is in the partition P for this hint
           if (this.isBlockInP(hintIdx, alpha)) {
               const offset = hintIdx * 32;
