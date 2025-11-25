@@ -11,6 +11,13 @@ const UINT256_MAX = (1n << 256n) - 1n;
 const hasWorkers = typeof Worker !== 'undefined';
 const numCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
 
+// Timestamped logging
+const log = (msg) => {
+  const now = new Date();
+  const ts = now.toISOString().slice(11, 23); // HH:MM:SS.mmm
+  log(`[${ts}] ${msg}`);
+};
+
 export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
     this.pirServerUrl = pirServerUrl;
@@ -26,7 +33,7 @@ export class PlinkoPIRClient {
    * Download snapshot and generate Light Client hints
    */
   async downloadHint(onProgress) {
-    console.log(`📥 Fetching snapshot manifest...`);
+    log(`📥 Fetching snapshot manifest...`);
     const manifest = await this.fetchSnapshotManifest();
     this.snapshotManifest = manifest;
     this.snapshotVersion = manifest.version;
@@ -40,7 +47,7 @@ export class PlinkoPIRClient {
     // Initialize keys
     this.initializeKeys();
 
-    console.log(`📦 Snapshot version ${this.snapshotVersion} (db_size=${this.metadata.dbSize}, chunk=${this.metadata.chunkSize}, set=${this.metadata.setSize})`);
+    log(`📦 Snapshot version ${this.snapshotVersion} (db_size=${this.metadata.dbSize}, chunk=${this.metadata.chunkSize}, set=${this.metadata.setSize})`);
 
     const databaseFile = this.findDatabaseFile(manifest);
     if (!databaseFile) {
@@ -54,7 +61,7 @@ export class PlinkoPIRClient {
     let snapshotBytes;
     
     if (cachedSnapshot) {
-      console.log(`📦 Loaded snapshot from cache (hash: ${expectedHash?.slice(0, 8)}...)`);
+      log(`📦 Loaded snapshot from cache (hash: ${expectedHash?.slice(0, 8)}...)`);
       if (onProgress) onProgress('database', 100);
       snapshotBytes = cachedSnapshot;
     } else {
@@ -75,22 +82,22 @@ export class PlinkoPIRClient {
     // Try to load cached hints (keyed by snapshot hash + master key hash)
     const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
     const hintsCacheKey = `hints-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
-    console.log(`🔑 Hints cache key: ${hintsCacheKey}`);
+    log(`🔑 Hints cache key: ${hintsCacheKey}`);
     const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
     
     if (cachedHints) {
-      console.log(`📦 Loaded hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+      log(`📦 Loaded hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
       this.hints = cachedHints;
       if (onProgress) onProgress('hint_generation', 100);
     } else {
-      console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
+      log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
       if (onProgress) onProgress('hint_generation', 0);
       
       // Generate hints (Web Workers don't support checkpointing)
       await this.generateHints(snapshotBytes, onProgress);
       
       if (onProgress) onProgress('hint_generation', 100);
-      console.log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
+      log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
       
       // Cache the completed hints
       await this.saveToCache('plinko-hints', hintsCacheKey, this.hints);
@@ -109,7 +116,7 @@ export class PlinkoPIRClient {
       const stored = localStorage.getItem(MASTER_KEY_STORAGE);
       if (stored) {
         masterKey = new Uint8Array(JSON.parse(stored));
-        console.log(`🔑 Loaded master key from storage`);
+        log(`🔑 Loaded master key from storage`);
       }
     } catch (e) {
       console.warn('Failed to load master key from storage:', e);
@@ -126,7 +133,7 @@ export class PlinkoPIRClient {
       // Persist the new key
       try {
         localStorage.setItem(MASTER_KEY_STORAGE, JSON.stringify(Array.from(masterKey)));
-        console.log(`🔑 Generated and saved new master key`);
+        log(`🔑 Generated and saved new master key`);
       } catch (e) {
         console.warn('Failed to persist master key:', e);
       }
@@ -171,7 +178,7 @@ export class PlinkoPIRClient {
     // Try Web Workers first for parallel processing
     if (hasWorkers) {
       try {
-        console.log(`🔧 Attempting Web Worker parallel hint generation...`);
+        log(`🔧 Attempting Web Worker parallel hint generation...`);
         await this.generateHintsWithWorkers(snapshotBytes, onProgress);
         return;
       } catch (err) {
@@ -193,7 +200,7 @@ export class PlinkoPIRClient {
     const numWorkers = Math.min(numCores, 8);
     const chunksPerWorker = Math.ceil(numChunks / numWorkers);
     
-    console.log(`⚡ Using ${numWorkers} Web Workers for hint generation (${numChunks} chunks, ${chunksPerWorker} per worker)`);
+    log(`⚡ Using ${numWorkers} Web Workers for hint generation (${numChunks} chunks, ${chunksPerWorker} per worker)`);
     
     // Track progress across all workers
     const workerProgress = new Array(numWorkers).fill(0);
@@ -206,7 +213,7 @@ export class PlinkoPIRClient {
       
       const now = Date.now();
       if (now - lastLogTime > 1000) {
-        console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${totalProcessed}/${numChunks} chunks)`);
+        log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${totalProcessed}/${numChunks} chunks)`);
         lastLogTime = now;
       }
     };
@@ -242,7 +249,7 @@ export class PlinkoPIRClient {
           switch (type) {
             case 'initialized':
               clearTimeout(initTimeout);
-              console.log(`🔧 Worker ${workerIdx} initialized (chunks ${chunkStart}-${chunkEnd})`);
+              log(`🔧 Worker ${workerIdx} initialized (chunks ${chunkStart}-${chunkEnd})`);
               // Send process command with snapshot copy
               worker.postMessage({
                 type: 'process',
@@ -260,7 +267,7 @@ export class PlinkoPIRClient {
             case 'complete':
               workerProgress[workerIdx] = chunkEnd - chunkStart;
               updateProgress();
-              console.log(`✅ Worker ${workerIdx} complete`);
+              log(`✅ Worker ${workerIdx} complete`);
               resolve(new Uint8Array(data.partialHints));
               worker.terminate();
               break;
@@ -299,7 +306,7 @@ export class PlinkoPIRClient {
       }
     }
     
-    console.log(`✅ Web Worker hint generation complete`);
+    log(`✅ Web Worker hint generation complete`);
   }
 
   /**
@@ -316,7 +323,7 @@ export class PlinkoPIRClient {
     const NUM_BATCHES = Math.min(numCores, 8);
     const chunksPerBatch = Math.ceil(numChunks / NUM_BATCHES);
     
-    console.log(`⚡ Using ${NUM_BATCHES} batches for main-thread hint generation`);
+    log(`⚡ Using ${NUM_BATCHES} batches for main-thread hint generation`);
     
     const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const hintsU32 = new Uint32Array(this.hints.buffer);
@@ -380,7 +387,7 @@ export class PlinkoPIRClient {
       const now = Date.now();
       const pct = (completedChunks / numChunks) * 100;
       if (now - lastLogTime > 1000) {
-        console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${completedChunks}/${numChunks} chunks)`);
+        log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${completedChunks}/${numChunks} chunks)`);
         lastLogTime = now;
       }
       if (onProgress) onProgress('hint_generation', pct);
@@ -613,7 +620,7 @@ export class PlinkoPIRClient {
         const cache = await caches.open(CACHE_NAME);
         const cachedResponse = await cache.match(cacheKey);
         if (cachedResponse) {
-          console.log(`📦 Served ${label} from cache`);
+          log(`📦 Served ${label} from cache`);
           if (onProgress) onProgress(100);
           const buffer = await cachedResponse.arrayBuffer();
           return new Uint8Array(buffer);
@@ -623,7 +630,7 @@ export class PlinkoPIRClient {
       }
     }
 
-    console.log(`📥 Downloading ${label} from ${url}...`);
+    log(`📥 Downloading ${label} from ${url}...`);
     const response = await fetch(url, {
       cache: 'no-store',
       headers: {
@@ -660,7 +667,7 @@ export class PlinkoPIRClient {
           const totalMB = (total / 1024 / 1024).toFixed(1);
           const elapsed = (now - startTime) / 1000;
           const speed = (receivedLength / 1024 / 1024 / elapsed).toFixed(1);
-          console.log(`📶 ${label}: ${percent}% (${receivedMB}/${totalMB} MB) - ${speed} MB/s`);
+          log(`📶 ${label}: ${percent}% (${receivedMB}/${totalMB} MB) - ${speed} MB/s`);
           if (onProgress) onProgress(Number(percent));
           lastLogTime = now;
         }
@@ -680,14 +687,14 @@ export class PlinkoPIRClient {
         const cache = await caches.open(CACHE_NAME);
         const responseToCache = new Response(chunksAll);
         await cache.put(cacheKey, responseToCache);
-        console.log(`💾 Cached ${label}`);
+        log(`💾 Cached ${label}`);
       } catch (err) {
         console.warn('Failed to write to cache:', err);
       }
     }
 
     const finalSize = (receivedLength / 1024 / 1024).toFixed(1);
-    console.log(`✅ Downloaded ${label} (${finalSize} MB)`);
+    log(`✅ Downloaded ${label} (${finalSize} MB)`);
     return chunksAll;
   }
 
@@ -708,7 +715,7 @@ export class PlinkoPIRClient {
     if (actualHex.toLowerCase() !== expectedHex.toLowerCase()) {
       throw new Error(`Snapshot hash mismatch. Expected ${expectedHex}, got ${actualHex}`);
     }
-    console.log(`✅ Snapshot hash verified (${expectedHex.slice(0, 8)}...)`);
+    log(`✅ Snapshot hash verified (${expectedHex.slice(0, 8)}...)`);
   }
 
   bufferToHex(bytes) {
@@ -738,7 +745,7 @@ export class PlinkoPIRClient {
       const cache = await caches.open(cacheName);
       const response = new Response(data);
       await cache.put(key, response);
-      console.log(`💾 Cached ${key} (${(data.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+      log(`💾 Cached ${key} (${(data.byteLength / 1024 / 1024).toFixed(1)} MB)`);
     } catch (e) {
       console.warn(`Cache save failed for ${key}:`, e);
     }
@@ -770,7 +777,7 @@ export class PlinkoPIRClient {
       const cache = await caches.open('plinko-checkpoints');
       await cache.put(`${key}-meta`, new Response(JSON.stringify({ completedChunks: checkpoint.completedChunks })));
       await cache.put(`${key}-hints`, new Response(checkpoint.hints));
-      console.log(`💾 Checkpoint saved (chunk ${checkpoint.completedChunks})`);
+      log(`💾 Checkpoint saved (chunk ${checkpoint.completedChunks})`);
     } catch (e) {
       console.warn(`Checkpoint save failed:`, e);
     }
@@ -812,7 +819,7 @@ export class PlinkoPIRClient {
     const entrySize = 24; // 20 bytes address + 4 bytes index
     const numEntries = mappingData.byteLength / entrySize;
 
-    console.log(`📊 Parsing ${numEntries.toLocaleString()} address entries...`);
+    log(`📊 Parsing ${numEntries.toLocaleString()} address entries...`);
 
     for (let i = 0; i < numEntries; i++) {
       const offset = i * entrySize;
@@ -830,16 +837,16 @@ export class PlinkoPIRClient {
     }
 
     const finalSize = (chunksAll.byteLength / 1024 / 1024).toFixed(1);
-    console.log(`✅ Address mapping loaded (${finalSize} MB, ${this.addressMapping.size.toLocaleString()} addresses)`);
+    log(`✅ Address mapping loaded (${finalSize} MB, ${this.addressMapping.size.toLocaleString()} addresses)`);
 
     // Log address range for debugging and cache verification
     if (this.addressMapping.size > 0) {
       const addresses = Array.from(this.addressMapping.keys()).sort();
       const firstAddr = addresses[0];
       const lastAddr = addresses[addresses.length - 1];
-      console.log(`📍 Address range: ${firstAddr} to ${lastAddr}`);
+      log(`📍 Address range: ${firstAddr} to ${lastAddr}`);
       const expectedCount = (this.metadata?.dbSize || DATASET_STATS.addressCount).toLocaleString();
-      console.log(`ℹ️  Expected dataset size: ${expectedCount} Ethereum addresses from the initial 99k mainnet blocks`);
+      log(`ℹ️  Expected dataset size: ${expectedCount} Ethereum addresses from the initial 99k mainnet blocks`);
 
       // Detect stale Anvil cache
       if (firstAddr.startsWith('0x1000')) {
