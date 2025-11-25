@@ -167,8 +167,9 @@ export class PlinkoPIRClient {
 
         if (i % 10000 === 0) {
             const now = Date.now();
-            if (now - lastLog > 200) {
+            if (now - lastLog > 500) {
                 const pct = (i / totalEntries) * 100;
+                console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${i}/${totalEntries})`);
                 if (onProgress) onProgress('hint_generation', pct);
                 lastLog = now;
                 // Yield to event loop to allow UI updates
