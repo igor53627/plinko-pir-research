@@ -79,17 +79,25 @@ export class PlinkoPIRClient {
       this.hints = cachedHints;
       if (onProgress) onProgress('hint_generation', 100);
     } else {
-      console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
-      if (onProgress) onProgress('hint_generation', 0);
+      // Check for partial progress checkpoint
+      const checkpointKey = `${hintsCacheKey}-checkpoint`;
+      const checkpoint = await this.loadCheckpoint(checkpointKey);
       
-      // Generate hints from snapshot
-      await this.generateHints(snapshotBytes, onProgress);
+      console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
+      if (checkpoint) {
+        console.log(`📥 Resuming from chunk ${checkpoint.completedChunks}/${this.iprfs.length}`);
+      }
+      if (onProgress) onProgress('hint_generation', checkpoint ? (checkpoint.completedChunks / this.iprfs.length) * 100 : 0);
+      
+      // Generate hints from snapshot (with checkpoint support)
+      await this.generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint);
       
       if (onProgress) onProgress('hint_generation', 100);
       console.log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
       
-      // Cache the hints
+      // Cache the completed hints and clear checkpoint
       await this.saveToCache('plinko-hints', hintsCacheKey, this.hints);
+      await this.clearCheckpoint(checkpointKey);
     }
 
     // Download address-mapping.bin
@@ -163,20 +171,28 @@ export class PlinkoPIRClient {
     this.iprfs = this.chunkKeys.map(k => new IPRF(k, this.numHints, this.metadata.chunkSize));
   }
 
-  async generateHints(snapshotBytes, onProgress) {
-    // hints array: numHints * 32 bytes
-    this.hints = new Uint8Array(this.numHints * 32);
-    const hintsU32 = new Uint32Array(this.hints.buffer);
-
+  async generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint) {
     const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const dbSize = this.metadata.dbSize;
     const chunkSize = this.metadata.chunkSize;
     const numChunks = this.iprfs.length;
     
+    // Resume from checkpoint or start fresh
+    let startChunk = 0;
+    if (checkpoint && checkpoint.hints) {
+      this.hints = checkpoint.hints;
+      startChunk = checkpoint.completedChunks;
+    } else {
+      this.hints = new Uint8Array(this.numHints * 32);
+    }
+    const hintsU32 = new Uint32Array(this.hints.buffer);
+    
     let lastLog = Date.now();
+    let lastCheckpoint = Date.now();
+    const CHECKPOINT_INTERVAL = 5000; // Save checkpoint every 5 seconds
     
     // Process chunk by chunk - pre-compute inverse table for each chunk
-    for (let alpha = 0; alpha < numChunks; alpha++) {
+    for (let alpha = startChunk; alpha < numChunks; alpha++) {
         const iprf = this.iprfs[alpha];
         
         // Pre-compute inverse lookup table for this chunk
@@ -225,6 +241,16 @@ export class PlinkoPIRClient {
         }
 
         const now = Date.now();
+        
+        // Save checkpoint periodically
+        if (now - lastCheckpoint > CHECKPOINT_INTERVAL) {
+            await this.saveCheckpoint(checkpointKey, {
+                completedChunks: alpha + 1,
+                hints: this.hints
+            });
+            lastCheckpoint = now;
+        }
+        
         if (now - lastLog > 500) {
             const pct = ((alpha + 1) / numChunks) * 100;
             console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (chunk ${alpha + 1}/${numChunks})`);
@@ -587,6 +613,49 @@ export class PlinkoPIRClient {
       console.log(`💾 Cached ${key} (${(data.byteLength / 1024 / 1024).toFixed(1)} MB)`);
     } catch (e) {
       console.warn(`Cache save failed for ${key}:`, e);
+    }
+  }
+
+  async loadCheckpoint(key) {
+    if (typeof caches === 'undefined') return null;
+    try {
+      const cache = await caches.open('plinko-checkpoints');
+      const metaResponse = await cache.match(`${key}-meta`);
+      const hintsResponse = await cache.match(`${key}-hints`);
+      if (metaResponse && hintsResponse) {
+        const meta = await metaResponse.json();
+        const hintsBuffer = await hintsResponse.arrayBuffer();
+        return {
+          completedChunks: meta.completedChunks,
+          hints: new Uint8Array(hintsBuffer)
+        };
+      }
+    } catch (e) {
+      console.warn(`Checkpoint load failed:`, e);
+    }
+    return null;
+  }
+
+  async saveCheckpoint(key, checkpoint) {
+    if (typeof caches === 'undefined') return;
+    try {
+      const cache = await caches.open('plinko-checkpoints');
+      await cache.put(`${key}-meta`, new Response(JSON.stringify({ completedChunks: checkpoint.completedChunks })));
+      await cache.put(`${key}-hints`, new Response(checkpoint.hints));
+      console.log(`💾 Checkpoint saved (chunk ${checkpoint.completedChunks})`);
+    } catch (e) {
+      console.warn(`Checkpoint save failed:`, e);
+    }
+  }
+
+  async clearCheckpoint(key) {
+    if (typeof caches === 'undefined') return;
+    try {
+      const cache = await caches.open('plinko-checkpoints');
+      await cache.delete(`${key}-meta`);
+      await cache.delete(`${key}-hints`);
+    } catch (e) {
+      // Ignore
     }
   }
 
