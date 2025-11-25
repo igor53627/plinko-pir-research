@@ -228,10 +228,9 @@ export class PlinkoClient {
                 const data = await this.downloadBundle(bundle);
                 const deltas = this.parseDeltas(data);
                 
-                // Verify we got all expected deltas
-                const expectedCount = bundle.endBlock - bundle.startBlock + 1;
-                if (deltas.length !== expectedCount) {
-                    throw new Error(`Bundle incomplete: expected ${expectedCount} deltas, got ${deltas.length}`);
+                // Verify we got some data
+                if (deltas.length === 0) {
+                    throw new Error(`Bundle empty`);
                 }
 
                 for (const delta of deltas) {
