@@ -118,63 +118,72 @@ export class PlinkoPIRClient {
   async generateHints(snapshotBytes, onProgress) {
     // hints array: numHints * 32 bytes
     this.hints = new Uint8Array(this.numHints * 32);
-    const view = new DataView(this.hints.buffer);
+    const hintsU32 = new Uint32Array(this.hints.buffer);
 
-    const dbView = new DataView(snapshotBytes.buffer, snapshotBytes.byteOffset, snapshotBytes.byteLength);
+    const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const dbSize = this.metadata.dbSize;
     const chunkSize = this.metadata.chunkSize;
+    const numChunks = this.iprfs.length;
     
-    const totalEntries = dbSize;
-    
-    // Iterate DB
     let lastLog = Date.now();
     
-    for (let i = 0; i < totalEntries; i++) {
-        const alpha = Math.floor(i / chunkSize);
-        const beta = i % chunkSize;
-        
-        // Read value
-        const valOffset = i * 32;
-        if (valOffset + 32 > snapshotBytes.byteLength) break;
-        
-        // Manual 32-byte XOR is slow in JS? 
-        // Optimization: Use Uint32Array views?
-        // For PoC, let's do byte-wise or BigInt
-        
-        // Read entry as 4 BigUint64s
-        const w0 = dbView.getBigUint64(valOffset, true);
-        const w1 = dbView.getBigUint64(valOffset + 8, true);
-        const w2 = dbView.getBigUint64(valOffset + 16, true);
-        const w3 = dbView.getBigUint64(valOffset + 24, true);
-        
-        // Find hints containing this element
-        // IPRF.inverse(beta) for chunk alpha
+    // Process chunk by chunk - pre-compute inverse table for each chunk
+    for (let alpha = 0; alpha < numChunks; alpha++) {
         const iprf = this.iprfs[alpha];
-        const hintIndices = iprf.inverse(beta);
         
-        for (const hintIdxBig of hintIndices) {
-            const hintIdx = Number(hintIdxBig);
-            // Only include this element if the block (alpha) is in the partition P for this hint
-            if (this.isBlockInP(hintIdx, alpha)) {
-                const hOffset = hintIdx * 32;
-                // XOR into hint
-                view.setBigUint64(hOffset, view.getBigUint64(hOffset, true) ^ w0, true);
-                view.setBigUint64(hOffset+8, view.getBigUint64(hOffset+8, true) ^ w1, true);
-                view.setBigUint64(hOffset+16, view.getBigUint64(hOffset+16, true) ^ w2, true);
-                view.setBigUint64(hOffset+24, view.getBigUint64(hOffset+24, true) ^ w3, true);
+        // Pre-compute inverse lookup table for this chunk
+        // inverseTable[beta] = array of hint indices
+        const inverseTable = new Array(chunkSize);
+        for (let beta = 0; beta < chunkSize; beta++) {
+            const indices = iprf.inverse(beta);
+            // Convert to Numbers and filter by isBlockInP
+            inverseTable[beta] = indices
+                .map(h => Number(h))
+                .filter(h => this.isBlockInP(h, alpha));
+        }
+        
+        // Now process all entries in this chunk
+        const chunkStart = alpha * chunkSize;
+        const chunkEnd = Math.min(chunkStart + chunkSize, dbSize);
+        
+        for (let i = chunkStart; i < chunkEnd; i++) {
+            const beta = i - chunkStart;
+            const valOffsetU32 = i * 8; // 32 bytes = 8 uint32s
+            
+            if (valOffsetU32 + 8 > dbU32.length) break;
+            
+            // Read 8 uint32s
+            const w0 = dbU32[valOffsetU32];
+            const w1 = dbU32[valOffsetU32 + 1];
+            const w2 = dbU32[valOffsetU32 + 2];
+            const w3 = dbU32[valOffsetU32 + 3];
+            const w4 = dbU32[valOffsetU32 + 4];
+            const w5 = dbU32[valOffsetU32 + 5];
+            const w6 = dbU32[valOffsetU32 + 6];
+            const w7 = dbU32[valOffsetU32 + 7];
+            
+            // XOR into matching hints
+            for (const hintIdx of inverseTable[beta]) {
+                const hOffsetU32 = hintIdx * 8;
+                hintsU32[hOffsetU32] ^= w0;
+                hintsU32[hOffsetU32 + 1] ^= w1;
+                hintsU32[hOffsetU32 + 2] ^= w2;
+                hintsU32[hOffsetU32 + 3] ^= w3;
+                hintsU32[hOffsetU32 + 4] ^= w4;
+                hintsU32[hOffsetU32 + 5] ^= w5;
+                hintsU32[hOffsetU32 + 6] ^= w6;
+                hintsU32[hOffsetU32 + 7] ^= w7;
             }
         }
 
-        if (i % 10000 === 0) {
-            const now = Date.now();
-            if (now - lastLog > 500) {
-                const pct = (i / totalEntries) * 100;
-                console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${i}/${totalEntries})`);
-                if (onProgress) onProgress('hint_generation', pct);
-                lastLog = now;
-                // Yield to event loop to allow UI updates
-                await new Promise(r => setTimeout(r, 0));
-            }
+        const now = Date.now();
+        if (now - lastLog > 500) {
+            const pct = ((alpha + 1) / numChunks) * 100;
+            console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (chunk ${alpha + 1}/${numChunks})`);
+            if (onProgress) onProgress('hint_generation', pct);
+            lastLog = now;
+            // Yield to event loop to allow UI updates
+            await new Promise(r => setTimeout(r, 0));
         }
     }
   }
