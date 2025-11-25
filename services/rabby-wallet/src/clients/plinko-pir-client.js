@@ -15,7 +15,7 @@ const numCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurren
 const log = (msg) => {
   const now = new Date();
   const ts = now.toISOString().slice(11, 23); // HH:MM:SS.mmm
-  log(`[${ts}] ${msg}`);
+  console.log(`[${ts}] ${msg}`);
 };
 
 export class PlinkoPIRClient {
