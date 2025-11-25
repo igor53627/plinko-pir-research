@@ -75,32 +75,25 @@ export class PlinkoPIRClient {
     // Try to load cached hints (keyed by snapshot hash + master key hash)
     const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
     const hintsCacheKey = `hints-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+    console.log(`🔑 Hints cache key: ${hintsCacheKey}`);
     const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
     
     if (cachedHints) {
-      console.log(`📦 Loaded hints from cache`);
+      console.log(`📦 Loaded hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
       this.hints = cachedHints;
       if (onProgress) onProgress('hint_generation', 100);
     } else {
-      // Check for partial progress checkpoint
-      const checkpointKey = `${hintsCacheKey}-checkpoint`;
-      const checkpoint = await this.loadCheckpoint(checkpointKey);
-      
       console.log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
-      if (checkpoint) {
-        console.log(`📥 Resuming from chunk ${checkpoint.completedChunks}/${this.iprfs.length}`);
-      }
-      if (onProgress) onProgress('hint_generation', checkpoint ? (checkpoint.completedChunks / this.iprfs.length) * 100 : 0);
+      if (onProgress) onProgress('hint_generation', 0);
       
-      // Generate hints from snapshot (with checkpoint support)
-      await this.generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint);
+      // Generate hints (Web Workers don't support checkpointing)
+      await this.generateHints(snapshotBytes, onProgress);
       
       if (onProgress) onProgress('hint_generation', 100);
       console.log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
       
-      // Cache the completed hints and clear checkpoint
+      // Cache the completed hints
       await this.saveToCache('plinko-hints', hintsCacheKey, this.hints);
-      await this.clearCheckpoint(checkpointKey);
     }
 
     // Download address-mapping.bin
@@ -174,9 +167,9 @@ export class PlinkoPIRClient {
     this.iprfs = this.chunkKeys.map(k => new IPRF(k, this.numHints, this.metadata.chunkSize));
   }
 
-  async generateHints(snapshotBytes, onProgress, checkpointKey, checkpoint) {
+  async generateHints(snapshotBytes, onProgress) {
     // Try Web Workers first for parallel processing
-    if (hasWorkers && !checkpoint) {
+    if (hasWorkers) {
       try {
         console.log(`🔧 Attempting Web Worker parallel hint generation...`);
         await this.generateHintsWithWorkers(snapshotBytes, onProgress);
@@ -187,7 +180,7 @@ export class PlinkoPIRClient {
     }
     
     // Fallback: main thread sequential processing
-    await this.generateHintsMainThread(snapshotBytes, onProgress, checkpointKey, checkpoint);
+    await this.generateHintsMainThread(snapshotBytes, onProgress);
   }
 
   /**
@@ -312,36 +305,27 @@ export class PlinkoPIRClient {
   /**
    * Fallback: Generate hints on main thread with batched processing
    */
-  async generateHintsMainThread(snapshotBytes, onProgress, checkpointKey, checkpoint) {
+  async generateHintsMainThread(snapshotBytes, onProgress) {
     const dbSize = this.metadata.dbSize;
     const chunkSize = this.metadata.chunkSize;
     const numChunks = this.iprfs.length;
     
-    // Resume from checkpoint or start fresh
-    let startChunk = 0;
-    if (checkpoint && checkpoint.hints) {
-      this.hints = checkpoint.hints;
-      startChunk = checkpoint.completedChunks;
-    } else {
-      this.hints = new Uint8Array(this.numHints * 32);
-    }
+    this.hints = new Uint8Array(this.numHints * 32);
     
     // Use batched processing for progress updates
-    const NUM_PARALLEL = Math.min(numCores, 8);
-    const chunksRemaining = numChunks - startChunk;
-    const chunksPerBatch = Math.ceil(chunksRemaining / NUM_PARALLEL);
+    const NUM_BATCHES = Math.min(numCores, 8);
+    const chunksPerBatch = Math.ceil(numChunks / NUM_BATCHES);
     
-    console.log(`⚡ Using ${NUM_PARALLEL} batches for main-thread hint generation`);
+    console.log(`⚡ Using ${NUM_BATCHES} batches for main-thread hint generation`);
     
     const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
     const hintsU32 = new Uint32Array(this.hints.buffer);
     
-    let completedChunks = startChunk;
-    let lastCheckpoint = Date.now();
-    const CHECKPOINT_INTERVAL = 5000;
+    let completedChunks = 0;
+    let lastLogTime = Date.now();
     
     // Process in batches, yielding between batches for UI updates
-    for (let batchStart = startChunk; batchStart < numChunks; batchStart += chunksPerBatch) {
+    for (let batchStart = 0; batchStart < numChunks; batchStart += chunksPerBatch) {
       const batchEnd = Math.min(batchStart + chunksPerBatch, numChunks);
       
       // Process this batch of chunks
@@ -392,20 +376,14 @@ export class PlinkoPIRClient {
         completedChunks++;
       }
       
-      // After each batch, update progress and checkpoint
+      // After each batch, update progress
       const now = Date.now();
       const pct = (completedChunks / numChunks) * 100;
-      console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (chunk ${completedChunks}/${numChunks})`);
-      if (onProgress) onProgress('hint_generation', pct);
-      
-      // Save checkpoint periodically
-      if (now - lastCheckpoint > CHECKPOINT_INTERVAL) {
-        await this.saveCheckpoint(checkpointKey, {
-          completedChunks,
-          hints: this.hints
-        });
-        lastCheckpoint = now;
+      if (now - lastLogTime > 1000) {
+        console.log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${completedChunks}/${numChunks} chunks)`);
+        lastLogTime = now;
       }
+      if (onProgress) onProgress('hint_generation', pct);
       
       // Yield to event loop for UI updates
       await new Promise(r => setTimeout(r, 0));
