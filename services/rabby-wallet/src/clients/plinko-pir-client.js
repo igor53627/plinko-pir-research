@@ -35,6 +35,85 @@ export class PlinkoPIRClient {
   }
 
   /**
+   * Try to restore hints and metadata from cache without full re-download.
+   * Returns true if successfully restored, false if cache miss.
+   */
+  async tryRestoreFromCache() {
+    try {
+      log(`🔍 Checking for cached hints...`);
+
+      // Fetch manifest to get current snapshot version and hash
+      const manifest = await this.fetchSnapshotManifest();
+      this.snapshotManifest = manifest;
+      this.snapshotVersion = manifest.version;
+
+      this.metadata = {
+        dbSize: Number(manifest.db_size),
+        chunkSize: Number(manifest.chunk_size),
+        setSize: Number(manifest.set_size)
+      };
+
+      // Initialize keys (loads persisted master key)
+      this.initializeKeys();
+
+      const databaseFile = this.findDatabaseFile(manifest);
+      if (!databaseFile) return false;
+
+      const expectedHash = databaseFile.sha256 || databaseFile.SHA256;
+
+      // Check if hints are cached
+      const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
+      const hintsCacheKey = `hints-v${IPRF_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+
+      const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
+      if (!cachedHints) {
+        log(`❌ No cached hints found`);
+        return false;
+      }
+
+      this.hints = cachedHints;
+      log(`✅ Restored hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+
+      // Also need to restore address mapping (cached in 'plinko-data-v1' by downloadBinary)
+      const cacheKey = `address-mapping-${this.snapshotVersion}`;
+      const cachedMapping = await this.loadFromCache('plinko-data-v1', cacheKey);
+      if (!cachedMapping) {
+        log(`❌ No cached address mapping found`);
+        // Download just the address mapping
+        await this.downloadAddressMapping(() => {});
+      } else {
+        // Parse the cached address mapping
+        this.parseAddressMapping(cachedMapping);
+        log(`✅ Restored address mapping from cache`);
+      }
+
+      return true;
+    } catch (e) {
+      log(`⚠️ Cache restore failed: ${e.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Parse address mapping from bytes
+   */
+  parseAddressMapping(mappingBytes) {
+    const view = new DataView(mappingBytes.buffer);
+    this.addressMapping = new Map();
+    const entrySize = 24; // 20 bytes address + 4 bytes index
+    const entryCount = Math.floor(mappingBytes.byteLength / entrySize);
+
+    for (let i = 0; i < entryCount; i++) {
+      const offset = i * entrySize;
+      const addrBytes = mappingBytes.slice(offset, offset + 20);
+      const addrHex = '0x' + this.bufferToHex(addrBytes);
+      const index = view.getUint32(offset + 20, true);
+      this.addressMapping.set(addrHex.toLowerCase(), index);
+    }
+    log(`📍 Parsed ${this.addressMapping.size} address mappings`);
+  }
+
+  /**
    * Download snapshot and generate Light Client hints
    */
   async downloadHint(onProgress) {
@@ -528,14 +607,42 @@ export class PlinkoPIRClient {
     // Get local hint value
     const hintVal = this.readHint(selectedHintIdx);
     const balance = hintVal ^ r0;
-    
+
+    // Calculate delta for visualization
+    const delta = hintVal ^ r0;
+
+    // Generate a sample of the PRF key (first 8 bytes of hint index as visualization)
+    const prfKeyBytes = [];
+    let tempIdx = selectedHintIdx;
+    for (let i = 0; i < 16; i++) {
+        prfKeyBytes.push(tempIdx & 0xFF);
+        tempIdx = Math.floor(tempIdx / 256) || (i + 1);
+    }
+
+    // Sample of indices selected (first few from finalP for display)
+    const prfSetSample = finalP.slice(0, 5).map(k => k * chunkSize + finalOffsets[k]);
+
     return {
         balance: balance,
         visualization: {
+            // Original fields
             hintIdx: selectedHintIdx,
             r0: r0.toString(),
             r1: r1.toString(),
-            hintVal: hintVal.toString()
+            hintVal: hintVal.toString(),
+            // Fields expected by App.jsx UI
+            prfKey: prfKeyBytes,
+            prfSetSample: prfSetSample,
+            chunkSize: chunkSize,
+            setSize: setSize,
+            prfSetSize: finalP.length + 1, // +1 for alpha that was punctured
+            targetIndex: targetIndex,
+            targetChunk: alpha,
+            serverParity: r0.toString(),
+            hintParity: hintVal.toString(),
+            delta: (balance === 0n ? '0' : balance.toString()),
+            hintValue: hintVal.toString(),
+            dbSize: chunkSize * setSize
         }
     };
   }

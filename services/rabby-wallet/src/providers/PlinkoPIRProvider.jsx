@@ -45,7 +45,7 @@ export const PlinkoPIRProvider = ({ children }) => {
   const pirClient = pirClientRef.current;
   const plinkoClient = plinkoClientRef.current;
 
-  // Detect Rabby wallet on mount
+  // Detect Rabby wallet and restore cached state on mount
   useEffect(() => {
     if (typeof window !== 'undefined' && window.ethereum?.isRabby) {
       console.log('🦊 Rabby wallet detected');
@@ -55,6 +55,32 @@ export const PlinkoPIRProvider = ({ children }) => {
     const savedDeltas = localStorage.getItem('deltasApplied');
     if (savedDeltas) {
       setDeltasApplied(parseInt(savedDeltas, 10));
+    }
+
+    // Try to restore privacy mode and hints from cache
+    const savedPrivacyMode = localStorage.getItem('privacyMode');
+    if (savedPrivacyMode === 'true') {
+      console.log('🔄 Privacy mode was enabled, attempting to restore from cache...');
+      setIsLoading(true);
+
+      pirClient.tryRestoreFromCache().then((restored) => {
+        if (restored) {
+          console.log('✅ Hints restored from cache - privacy mode ready');
+          const size = pirClient.getHintSize();
+          setHintDownloaded(true);
+          setHintSize(size);
+          setPrivacyMode(true);
+        } else {
+          console.log('❌ Cache miss - will need to re-download when privacy mode enabled');
+          // Clear the persisted privacy mode since we couldn't restore
+          localStorage.removeItem('privacyMode');
+        }
+      }).catch((err) => {
+        console.error('⚠️ Failed to restore from cache:', err);
+        localStorage.removeItem('privacyMode');
+      }).finally(() => {
+        setIsLoading(false);
+      });
     }
   }, []);
 
