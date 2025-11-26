@@ -126,9 +126,6 @@ export const PrivacyMode = () => {
         <p className="privacy-performance">
           <strong>Performance:</strong> ~5ms query latency | ~{totalSnapshotMB} MB one-time download | ~30 KB per block update
         </p>
-        <p className="ui-version" style={{ textAlign: 'right', fontSize: '0.7rem', color: '#444', marginTop: '10px' }}>
-          UI Version: v1.2.0 (Caching + Label Updates)
-        </p>
       </div>
     </div>
   );
