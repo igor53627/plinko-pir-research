@@ -257,4 +257,62 @@ describe('PlinkoClientState', () => {
       expect(stats.remainingBackup).toBe(3);
     });
   });
+
+  describe('serialization', () => {
+    it('should serialize and deserialize correctly', () => {
+      const state = new PlinkoClientState(64, 8, 2, 3, masterKey);
+      state.initializeHints();
+      
+      // Process some entries to create non-zero parities
+      state.processEntry(0, 12345n);
+      state.processEntry(10, 67890n);
+      state.processEntry(32, 11111n);
+      
+      // Serialize
+      const bytes = state.toBytes();
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      
+      // Deserialize
+      const restored = PlinkoClientState.fromBytes(bytes, masterKey);
+      
+      // Verify parameters match
+      expect(restored.n).toBe(state.n);
+      expect(restored.w).toBe(state.w);
+      expect(restored.lambda).toBe(state.lambda);
+      expect(restored.q).toBe(state.q);
+      expect(restored.c).toBe(state.c);
+      
+      // Verify hint counts match
+      expect(restored.numRegularHints).toBe(state.numRegularHints);
+      expect(restored.numBackupHints).toBe(state.numBackupHints);
+      
+      // Verify parities match
+      for (let j = 0; j < state.numRegularHints; j++) {
+        expect(restored.regularHints[j].parity).toBe(state.regularHints[j].parity);
+      }
+      
+      for (let k = 0; k < state.numBackupHints; k++) {
+        expect(restored.backupHints[k].parityIn).toBe(state.backupHints[k].parityIn);
+        expect(restored.backupHints[k].parityOut).toBe(state.backupHints[k].parityOut);
+      }
+    });
+
+    it('should handle large 256-bit parities', () => {
+      const state = new PlinkoClientState(64, 8, 2, 3, masterKey);
+      state.initializeHints();
+      
+      // Process entry with large 256-bit value
+      const largeValue = (1n << 200n) + (1n << 100n) + 42n;
+      state.processEntry(5, largeValue);
+      
+      const bytes = state.toBytes();
+      const restored = PlinkoClientState.fromBytes(bytes, masterKey);
+      
+      // Find a hint affected by entry 5 and verify parity preserved
+      const alpha = Math.floor(5 / state.w);
+      for (let j = 0; j < state.numRegularHints; j++) {
+        expect(restored.regularHints[j].parity).toBe(state.regularHints[j].parity);
+      }
+    });
+  });
 });

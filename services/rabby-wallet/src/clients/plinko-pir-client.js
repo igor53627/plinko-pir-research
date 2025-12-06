@@ -1,25 +1,22 @@
 import { sha256 } from '@noble/hashes/sha256';
-import { IPRF } from '../crypto/iprf-v2.js';
+import { PlinkoClientState } from '../crypto/plinko-hints.js';
 import { DATASET_STATS } from '../constants/dataset.js';
 
 const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto
   ? globalThis.crypto
   : null;
-const UINT256_MAX = (1n << 256n) - 1n;
 
-// IPRF algorithm version - increment when IPRF implementation changes
-// v1: Original exact binomial sampling (slow)
-// v2: Normal approximation for large n (87x faster, different outputs)
-const IPRF_VERSION = 2;
+// Plinko security parameters
+const LAMBDA_HINT_SECURITY = 8;  // λ - tune for memory vs security (8 for dev, 64-128 for prod)
+const MAX_QUERIES_BEFORE_REFRESH = 256;  // q - queries before hint refresh needed
 
-// Check if Web Workers are available
-const hasWorkers = typeof Worker !== 'undefined';
-const numCores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency || 4) : 4;
+// Cache format version - increment when PlinkoClientState serialization changes
+const HINTS_FORMAT_VERSION = 3;
 
 // Timestamped logging
 const log = (msg) => {
   const now = new Date();
-  const ts = now.toISOString().slice(11, 23); // HH:MM:SS.mmm
+  const ts = now.toISOString().slice(11, 23);
   console.log(`[${ts}] ${msg}`);
 };
 
@@ -27,22 +24,17 @@ export class PlinkoPIRClient {
   constructor(pirServerUrl, cdnUrl) {
     this.pirServerUrl = pirServerUrl;
     this.cdnUrl = cdnUrl;
-    this.hints = null; // Uint8Array holding parities (numHints * 32 bytes)
-    this.chunkKeys = null; // Array of IPRF keys
+    this.clientState = null;  // PlinkoClientState instance
     this.metadata = null;
     this.snapshotVersion = null;
     this.masterKey = null;
+    this.addressMapping = null;
   }
 
-  /**
-   * Try to restore hints and metadata from cache without full re-download.
-   * Returns true if successfully restored, false if cache miss.
-   */
   async tryRestoreFromCache() {
     try {
       log(`🔍 Checking for cached hints...`);
 
-      // Fetch manifest to get current snapshot version and hash
       const manifest = await this.fetchSnapshotManifest();
       this.snapshotManifest = manifest;
       this.snapshotVersion = manifest.version;
@@ -53,17 +45,14 @@ export class PlinkoPIRClient {
         setSize: Number(manifest.set_size)
       };
 
-      // Initialize keys (loads persisted master key)
-      this.initializeKeys();
+      this.initializeMasterKey();
 
       const databaseFile = this.findDatabaseFile(manifest);
       if (!databaseFile) return false;
 
       const expectedHash = databaseFile.sha256 || databaseFile.SHA256;
-
-      // Check if hints are cached
       const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
-      const hintsCacheKey = `hints-v${IPRF_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+      const hintsCacheKey = `hints-v${HINTS_FORMAT_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
 
       const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
       if (!cachedHints) {
@@ -71,18 +60,14 @@ export class PlinkoPIRClient {
         return false;
       }
 
-      this.hints = cachedHints;
+      this.clientState = PlinkoClientState.fromBytes(cachedHints, this.masterKey);
       log(`✅ Restored hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
 
-      // Also need to restore address mapping (cached in 'plinko-data-v1' by downloadBinary)
       const cacheKey = `address-mapping-${this.snapshotVersion}`;
       const cachedMapping = await this.loadFromCache('plinko-data-v1', cacheKey);
       if (!cachedMapping) {
-        log(`❌ No cached address mapping found`);
-        // Download just the address mapping
         await this.downloadAddressMapping(() => {});
       } else {
-        // Parse the cached address mapping
         this.parseAddressMapping(cachedMapping);
         log(`✅ Restored address mapping from cache`);
       }
@@ -94,13 +79,10 @@ export class PlinkoPIRClient {
     }
   }
 
-  /**
-   * Parse address mapping from bytes
-   */
   parseAddressMapping(mappingBytes) {
     const view = new DataView(mappingBytes.buffer);
     this.addressMapping = new Map();
-    const entrySize = 24; // 20 bytes address + 4 bytes index
+    const entrySize = 24;
     const entryCount = Math.floor(mappingBytes.byteLength / entrySize);
 
     for (let i = 0; i < entryCount; i++) {
@@ -113,9 +95,6 @@ export class PlinkoPIRClient {
     log(`📍 Parsed ${this.addressMapping.size} address mappings`);
   }
 
-  /**
-   * Download snapshot and generate Light Client hints
-   */
   async downloadHint(onProgress) {
     log(`📥 Fetching snapshot manifest...`);
     const manifest = await this.fetchSnapshotManifest();
@@ -128,8 +107,7 @@ export class PlinkoPIRClient {
       setSize: Number(manifest.set_size)
     };
     
-    // Initialize keys
-    this.initializeKeys();
+    this.initializeMasterKey();
 
     log(`📦 Snapshot version ${this.snapshotVersion} (db_size=${this.metadata.dbSize}, chunk=${this.metadata.chunkSize}, set=${this.metadata.setSize})`);
 
@@ -140,7 +118,6 @@ export class PlinkoPIRClient {
 
     const expectedHash = databaseFile.sha256 || databaseFile.SHA256;
     
-    // Try to load from cache first using hash as key
     const cachedSnapshot = await this.loadFromCache('snapshot-db', expectedHash);
     let snapshotBytes;
     
@@ -158,41 +135,35 @@ export class PlinkoPIRClient {
       );
 
       await this.verifySnapshotHash(snapshotBytes, expectedHash);
-      
-      // Save to cache with hash as key
       await this.saveToCache('snapshot-db', expectedHash, snapshotBytes);
     }
 
-    // Try to load cached hints (keyed by snapshot hash + master key hash + IPRF version)
     const masterKeyHash = this.bufferToHex(sha256(this.masterKey)).slice(0, 16);
-    const hintsCacheKey = `hints-v${IPRF_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
+    const hintsCacheKey = `hints-v${HINTS_FORMAT_VERSION}-${expectedHash?.slice(0, 16)}-${masterKeyHash}`;
     log(`🔑 Hints cache key: ${hintsCacheKey}`);
     const cachedHints = await this.loadFromCache('plinko-hints', hintsCacheKey);
     
     if (cachedHints) {
       log(`📦 Loaded hints from cache (${(cachedHints.byteLength / 1024 / 1024).toFixed(1)} MB)`);
-      this.hints = cachedHints;
+      this.clientState = PlinkoClientState.fromBytes(cachedHints, this.masterKey);
       if (onProgress) onProgress('hint_generation', 100);
     } else {
-      log(`⚙️ Generating Plinko Hints (Light Client Mode)...`);
+      log(`⚙️ Generating Plinko Hints (Reference-Aligned Mode)...`);
       if (onProgress) onProgress('hint_generation', 0);
       
-      // Generate hints (Web Workers don't support checkpointing)
       await this.generateHints(snapshotBytes, onProgress);
       
       if (onProgress) onProgress('hint_generation', 100);
-      log(`✅ Hints generated. Storage: ${(this.hints.byteLength / 1024 / 1024).toFixed(1)} MB`);
+      const serialized = this.clientState.toBytes();
+      log(`✅ Hints generated. Storage: ${(serialized.byteLength / 1024 / 1024).toFixed(1)} MB`);
       
-      // Cache the completed hints
-      await this.saveToCache('plinko-hints', hintsCacheKey, this.hints);
+      await this.saveToCache('plinko-hints', hintsCacheKey, serialized);
     }
 
-    // Download address-mapping.bin
     await this.downloadAddressMapping((percent) => onProgress && onProgress('address_mapping', percent));
   }
 
-  initializeKeys() {
-    // Try to load persisted master key, or generate new one
+  initializeMasterKey() {
     const MASTER_KEY_STORAGE = 'plinko-master-key';
     let masterKey;
     
@@ -214,7 +185,6 @@ export class PlinkoPIRClient {
         console.warn("Using insecure random for master key");
         for(let i=0; i<32; i++) masterKey[i] = Math.floor(Math.random() * 256);
       }
-      // Persist the new key
       try {
         localStorage.setItem(MASTER_KEY_STORAGE, JSON.stringify(Array.from(masterKey)));
         log(`🔑 Generated and saved new master key`);
@@ -223,269 +193,63 @@ export class PlinkoPIRClient {
       }
     }
     this.masterKey = masterKey;
-
-    // Derive keys for each chunk IPRF
-    // key[i] = H(master, i)
-    // We use a simple derivation for PoC
-    this.chunkKeys = [];
-    for (let i = 0; i < this.metadata.setSize; i++) {
-        const k = new Uint8Array(32);
-        // Simple KDF: XOR master with index (not secure, but functional for PoC structure)
-        // Real impl should use HMAC/HKDF
-        for(let j=0; j<32; j++) k[j] = masterKey[j];
-        // Mix index into first 8 bytes
-        let idx = i;
-        for(let j=0; j<8; j++) {
-            k[j] ^= idx & 0xFF;
-            idx >>= 8;
-        }
-        this.chunkKeys.push(k);
-    }
-
-    // Initialize IPRFs
-    // We'll create them on demand to save memory, or cache them?
-    // Creating 1000 IPRF objects is fine.
-    this.iprfs = this.chunkKeys.map(k => new IPRF(k, this.metadata.numHints || (this.metadata.setSize * 2), this.metadata.chunkSize)); 
-    // numHints usually depends on params. Let's assume numHints approx setSize * lambda?
-    // For this PoC, let's define numHints.
-    // Paper: "n/r sets". 
-    // Let's fix numHints = setSize * 4 for good coverage?
-    // Params.go doesn't specify numHints. 
-    // Let's assume numHints = setSize * 64 (approx sqrt(N) * log N)
-    this.numHints = this.metadata.setSize * 64;
-    
-    // Re-init IPRFs with correct domain size
-    this.iprfs = this.chunkKeys.map(k => new IPRF(k, this.numHints, this.metadata.chunkSize));
   }
 
   async generateHints(snapshotBytes, onProgress) {
-    // Try Web Workers first for parallel processing
-    if (hasWorkers) {
-      try {
-        log(`🔧 Attempting Web Worker parallel hint generation...`);
-        await this.generateHintsWithWorkers(snapshotBytes, onProgress);
-        return;
-      } catch (err) {
-        console.warn(`⚠️ Web Workers failed, falling back to main thread:`, err.message);
-      }
-    }
+    const { dbSize, chunkSize } = this.metadata;
     
-    // Fallback: main thread sequential processing
-    await this.generateHintsMainThread(snapshotBytes, onProgress);
-  }
-
-  /**
-   * Generate hints using Web Workers for parallel processing
-   * Expected 4-8x speedup depending on core count
-   */
-  async generateHintsWithWorkers(snapshotBytes, onProgress) {
-    const dbSize = this.metadata.dbSize;
-    const numChunks = this.iprfs.length;
-    const numWorkers = Math.min(numCores, 8);
-    const chunksPerWorker = Math.ceil(numChunks / numWorkers);
+    // Create PlinkoClientState with reference-aligned parameters
+    this.clientState = new PlinkoClientState(
+      dbSize,
+      chunkSize,
+      LAMBDA_HINT_SECURITY,
+      MAX_QUERIES_BEFORE_REFRESH,
+      this.masterKey
+    );
     
-    log(`⚡ Using ${numWorkers} Web Workers for hint generation (${numChunks} chunks, ${chunksPerWorker} per worker)`);
+    // Initialize hint structures (creates block subsets)
+    this.clientState.initializeHints();
     
-    // Track progress across all workers
-    const workerProgress = new Array(numWorkers).fill(0);
+    log(`📊 Hint params: λ=${LAMBDA_HINT_SECURITY}, w=${chunkSize}, q=${MAX_QUERIES_BEFORE_REFRESH}`);
+    log(`📊 Regular hints: ${this.clientState.numRegularHints}, Backup hints: ${this.clientState.numBackupHints}`);
+    
+    // Stream database and process entries
+    const view = new DataView(snapshotBytes.buffer, snapshotBytes.byteOffset, snapshotBytes.byteLength);
+    const entrySize = 32;
+    const totalEntries = Math.floor(snapshotBytes.byteLength / entrySize);
+    
     let lastLogTime = Date.now();
+    const startTime = Date.now();
     
-    const updateProgress = () => {
-      const totalProcessed = workerProgress.reduce((a, b) => a + b, 0);
-      const pct = (totalProcessed / numChunks) * 100;
-      if (onProgress) onProgress('hint_generation', pct);
+    for (let i = 0; i < Math.min(totalEntries, dbSize); i++) {
+      // Read 256-bit value as BigInt
+      const offset = i * entrySize;
+      let value = 0n;
+      for (let w = 0; w < 4; w++) {
+        value |= view.getBigUint64(offset + w * 8, true) << BigInt(w * 64);
+      }
       
+      // Process entry through PlinkoClientState
+      this.clientState.processEntry(i, value);
+      
+      // Progress reporting
       const now = Date.now();
       if (now - lastLogTime > 1000) {
-        log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${totalProcessed}/${numChunks} chunks)`);
+        const pct = ((i / totalEntries) * 100).toFixed(1);
+        const elapsed = (now - startTime) / 1000;
+        const rate = (i / elapsed / 1000).toFixed(1);
+        log(`⚙️ Hint generation: ${pct}% (${i.toLocaleString()}/${totalEntries.toLocaleString()} entries, ${rate}k/s)`);
+        if (onProgress) onProgress('hint_generation', Number(pct));
         lastLogTime = now;
       }
-    };
-    
-    // Create workers
-    const workerPromises = [];
-    
-    for (let w = 0; w < numWorkers; w++) {
-      const chunkStart = w * chunksPerWorker;
-      const chunkEnd = Math.min(chunkStart + chunksPerWorker, numChunks);
-      
-      if (chunkStart >= numChunks) break;
-      
-      // Get keys for this worker's chunk range
-      const workerKeys = this.chunkKeys.slice(chunkStart, chunkEnd).map(k => Array.from(k));
-      
-      // Create worker using Vite's recommended syntax
-      const worker = new Worker(
-        new URL('../workers/hint-worker.js', import.meta.url),
-        { type: 'module' }
-      );
-      
-      const workerPromise = new Promise((resolve, reject) => {
-        const workerIdx = w;
-        let initTimeout = setTimeout(() => {
-          worker.terminate();
-          reject(new Error(`Worker ${workerIdx} initialization timeout`));
-        }, 10000);
-        
-        worker.onmessage = (e) => {
-          const { type, ...data } = e.data;
-          
-          switch (type) {
-            case 'initialized':
-              clearTimeout(initTimeout);
-              log(`🔧 Worker ${workerIdx} initialized (chunks ${chunkStart}-${chunkEnd})`);
-              // Send process command with snapshot copy
-              worker.postMessage({
-                type: 'process',
-                chunkEnd,
-                snapshotBytes: snapshotBytes.buffer.slice(0),
-                dbSize
-              });
-              break;
-              
-            case 'progress':
-              workerProgress[workerIdx] = data.processed;
-              updateProgress();
-              break;
-              
-            case 'complete':
-              workerProgress[workerIdx] = chunkEnd - chunkStart;
-              updateProgress();
-              log(`✅ Worker ${workerIdx} complete`);
-              resolve(new Uint8Array(data.partialHints));
-              worker.terminate();
-              break;
-          }
-        };
-        
-        worker.onerror = (err) => {
-          clearTimeout(initTimeout);
-          worker.terminate();
-          reject(new Error(`Worker ${workerIdx} error: ${err.message}`));
-        };
-        
-        // Initialize worker with keys and metadata
-        worker.postMessage({
-          type: 'initialize',
-          chunkKeys: workerKeys,
-          metadata: this.metadata,
-          chunkStartIdx: chunkStart
-        });
-      });
-      
-      workerPromises.push(workerPromise);
     }
     
-    // Wait for all workers to complete
-    const partialResults = await Promise.all(workerPromises);
-    
-    // XOR all partial hints together
-    this.hints = new Uint8Array(this.numHints * 32);
-    const hintsU32 = new Uint32Array(this.hints.buffer);
-    
-    for (const partial of partialResults) {
-      const partialU32 = new Uint32Array(partial.buffer);
-      for (let i = 0; i < hintsU32.length; i++) {
-        hintsU32[i] ^= partialU32[i];
-      }
-    }
-    
-    log(`✅ Web Worker hint generation complete`);
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    log(`✅ Processed ${totalEntries.toLocaleString()} entries in ${elapsed}s`);
   }
 
-  /**
-   * Fallback: Generate hints on main thread with batched processing
-   */
-  async generateHintsMainThread(snapshotBytes, onProgress) {
-    const dbSize = this.metadata.dbSize;
-    const chunkSize = this.metadata.chunkSize;
-    const numChunks = this.iprfs.length;
-    
-    this.hints = new Uint8Array(this.numHints * 32);
-    
-    // Use batched processing for progress updates
-    const NUM_BATCHES = Math.min(numCores, 8);
-    const chunksPerBatch = Math.ceil(numChunks / NUM_BATCHES);
-    
-    log(`⚡ Using ${NUM_BATCHES} batches for main-thread hint generation`);
-    
-    const dbU32 = new Uint32Array(snapshotBytes.buffer, snapshotBytes.byteOffset, Math.floor(snapshotBytes.byteLength / 4));
-    const hintsU32 = new Uint32Array(this.hints.buffer);
-    
-    let completedChunks = 0;
-    let lastLogTime = Date.now();
-    
-    // Process in batches, yielding between batches for UI updates
-    for (let batchStart = 0; batchStart < numChunks; batchStart += chunksPerBatch) {
-      const batchEnd = Math.min(batchStart + chunksPerBatch, numChunks);
-      
-      // Process this batch of chunks
-      for (let alpha = batchStart; alpha < batchEnd; alpha++) {
-        const iprf = this.iprfs[alpha];
-        
-        // Pre-compute inverse lookup table for this chunk
-        const inverseTable = new Array(chunkSize);
-        for (let beta = 0; beta < chunkSize; beta++) {
-          const indices = iprf.inverse(beta);
-          inverseTable[beta] = indices
-            .map(h => Number(h))
-            .filter(h => this.isBlockInP(h, alpha));
-        }
-        
-        // Process all entries in this chunk
-        const chunkStart = alpha * chunkSize;
-        const chunkEnd = Math.min(chunkStart + chunkSize, dbSize);
-        
-        for (let i = chunkStart; i < chunkEnd; i++) {
-          const beta = i - chunkStart;
-          const valOffsetU32 = i * 8;
-          
-          if (valOffsetU32 + 8 > dbU32.length) break;
-          
-          const w0 = dbU32[valOffsetU32];
-          const w1 = dbU32[valOffsetU32 + 1];
-          const w2 = dbU32[valOffsetU32 + 2];
-          const w3 = dbU32[valOffsetU32 + 3];
-          const w4 = dbU32[valOffsetU32 + 4];
-          const w5 = dbU32[valOffsetU32 + 5];
-          const w6 = dbU32[valOffsetU32 + 6];
-          const w7 = dbU32[valOffsetU32 + 7];
-          
-          for (const hintIdx of inverseTable[beta]) {
-            const hOffsetU32 = hintIdx * 8;
-            hintsU32[hOffsetU32] ^= w0;
-            hintsU32[hOffsetU32 + 1] ^= w1;
-            hintsU32[hOffsetU32 + 2] ^= w2;
-            hintsU32[hOffsetU32 + 3] ^= w3;
-            hintsU32[hOffsetU32 + 4] ^= w4;
-            hintsU32[hOffsetU32 + 5] ^= w5;
-            hintsU32[hOffsetU32 + 6] ^= w6;
-            hintsU32[hOffsetU32 + 7] ^= w7;
-          }
-        }
-        
-        completedChunks++;
-      }
-      
-      // After each batch, update progress
-      const now = Date.now();
-      const pct = (completedChunks / numChunks) * 100;
-      if (now - lastLogTime > 1000) {
-        log(`⚙️ Hint generation: ${pct.toFixed(1)}% (${completedChunks}/${numChunks} chunks)`);
-        lastLogTime = now;
-      }
-      if (onProgress) onProgress('hint_generation', pct);
-      
-      // Yield to event loop for UI updates
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-
-  /**
-   * Plinko Query (Real Protocol)
-   */
   async queryBalancePrivate(address) {
-    if (!this.hints) {
+    if (!this.clientState) {
       throw new Error('Hints not initialized');
     }
 
@@ -495,209 +259,111 @@ export class PlinkoPIRClient {
     const alpha = Math.floor(targetIndex / chunkSize);
     const beta = targetIndex % chunkSize;
 
-    // 1. Find a hint set containing target (alpha, beta)
-    const iprf = this.iprfs[alpha];
-    const candidates = iprf.inverse(beta);
-    
-    if (candidates.length === 0) {
-        throw new Error("No hint set found for this element (probabilistic failure, try refreshing hints)");
-    }
-    
-    // Pick random candidate securely
-    const randBuf = new Uint32Array(1);
-    if (browserCrypto) {
-        browserCrypto.getRandomValues(randBuf);
-    } else {
-        randBuf[0] = Math.floor(Math.random() * 0xFFFFFFFF);
-    }
-    const hintIdx = Number(candidates[randBuf[0] % candidates.length]);
-    
-    // 2. Construct Query
-    // Reconstruct the set P and offsets
-    const P = [];
-    const offsets = new Uint8Array(setSize); // Using Uint8Array assuming offset fits in 255? 
-    // Wait, offset < chunkSize. chunkSize ~ 1000. Need Uint16 or Uint32.
-    const offsetsArr = new Uint32Array(setSize);
-    
-    // Derive P (subset of blocks)
-    // We use a simple PRG seeded by hintIdx to determine P
-    // For each block k, is k in P?
-    // We also need the offsets for each block k.
-    // offset_k = IPRF_k.forward(hintIdx)
-    
-    for (let k = 0; k < setSize; k++) {
-        const o = this.iprfs[k].forward(hintIdx);
-        offsetsArr[k] = o;
-        
-        // Determine if k is in P
-        // Seed PRG with (hintIdx, k) or just (hintIdx) and sample set?
-        // Implementation must match server? No, Client sends P to Server.
-        // So Client defines P.
-        // P should be random subset of size approx setSize/2.
-        // Use hash(hintIdx, k) < Threshold
-        if (this.isBlockInP(hintIdx, k)) {
-            P.push(k);
-        }
-    }
-    
-    // Puncturing:
-    // We need alpha to be in P? 
-    // Figure 7: "If alpha in P: H[j] = (P, p xor d)".
-    // Query q = (P \ {alpha}, offsets).
-    // So if alpha is NOT in P, we can't use this hint for alpha?
-    // Wait, if alpha is NOT in P, then H[j] does not include D[alpha].
-    // So H[j] = Parity(Blocks in P).
-    // Response r0 = Parity(Blocks in P \ {alpha}).
-    // If alpha not in P, then H[j] is independent of D[alpha].
-    // So we MUST select a hint where alpha IS in P.
-    
-    // Filter candidates for alpha \in P (convert BigInt to Number)
-    const validCandidates = candidates.map(h => Number(h)).filter(h => this.isBlockInP(h, alpha));
-    if (validCandidates.length === 0) {
-        throw new Error("No valid hint found (alpha not in P)");
+    // Check client-side cache first
+    const cached = this.clientState.getCached(targetIndex);
+    if (cached !== null) {
+      log(`📦 Cache hit for index ${targetIndex}`);
+      return {
+        balance: cached & ((1n << 64n) - 1n),
+        saturated: false,
+        visualization: { cached: true, targetIndex }
+      };
     }
 
-    // Select securely
-    if (browserCrypto) {
-        browserCrypto.getRandomValues(randBuf);
-    } else {
-        randBuf[0] = Math.floor(Math.random() * 0xFFFFFFFF);
+    // Get a hint for this entry
+    const hintInfo = this.clientState.getHint(alpha, beta);
+    if (!hintInfo) {
+      throw new Error("No available hint for this entry - refresh hints needed");
     }
-    const selectedHintIdx = validCandidates[randBuf[0] % validCandidates.length];
-    
-    // Re-generate P and offsets for selected hint
-    const finalP = [];
-    const finalOffsets = [];
-    for (let k = 0; k < setSize; k++) {
-        finalOffsets.push(this.iprfs[k].forward(selectedHintIdx));
-        if (this.isBlockInP(selectedHintIdx, k)) {
-            // Remove alpha from P sent to server
-            if (k !== alpha) {
-                finalP.push(k);
-            }
-        }
+
+    const { hintIdx, blocks, parity, offsets, isPromoted } = hintInfo;
+
+    // Build query: P' = blocks \ {alpha}, offsets for all blocks
+    const queryP = [];
+    for (const blockIdx of blocks) {
+      if (blockIdx !== alpha) {
+        queryP.push(blockIdx);
+      }
     }
-    
-    // 3. Send Query
+
+    // Send query to server
     const url = `${this.pirServerUrl}/query/plinko`;
     const body = {
-        p: finalP,
-        offsets: finalOffsets
+      p: queryP,
+      offsets: offsets
     };
     
     const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
     
     const data = await response.json();
     const r0 = BigInt(data.r0);
     const r1 = BigInt(data.r1);
     
-    // 4. Reconstruct
-    // H[j] = Parity(P_orig)
-    // r0 = Parity(P \ {alpha})
-    // So H[j] ^ r0 = D[alpha] (if alpha in P)
-    // Wait, we verified alpha in P.
-    // So Parity(P) = D[alpha] ^ Parity(P \ {alpha}).
-    // D[alpha] = H[j] ^ Parity(P \ {alpha}).
-    // Parity(P \ {alpha}) is exactly r0 returned by server (sum of blocks in finalP).
+    // Reconstruct value: D[target] = parity XOR r0
+    // parity = XOR of all entries in blocks at iPRF offsets
+    // r0 = XOR of all entries in queryP (blocks \ {alpha}) at iPRF offsets
+    // So: parity XOR r0 = D[target]
+    const rawBalance = parity ^ r0;
     
-    // Get local hint value
-    const hintVal = this.readHint(selectedHintIdx);
-    const rawBalance = hintVal ^ r0;
+    // Consume hint and promote backup
+    this.clientState.consumeHint(hintIdx, targetIndex, rawBalance);
 
-    // Balance is stored as 64-bit in the dataset - extract lower 64 bits
+    // Balance is stored as 256-bit, but actual ETH balance fits in 64-bit for most accounts
     const balance = rawBalance & ((1n << 64n) - 1n);
-
-    // Check if the full 256-bit XOR result has upper bits set (indicates potential mismatch or saturation)
     const saturated = rawBalance !== balance;
 
     if (saturated) {
       console.warn(`⚠️ Balance overflow detected: raw=${rawBalance}, masked=${balance}`);
     }
 
-    // Calculate delta for visualization (should be 0 if hint is synchronized)
-    const delta = rawBalance;
-
-    // Generate a sample of the PRF key (first 8 bytes of hint index as visualization)
-    const prfKeyBytes = [];
-    let tempIdx = selectedHintIdx;
-    for (let i = 0; i < 16; i++) {
-        prfKeyBytes.push(tempIdx & 0xFF);
-        tempIdx = Math.floor(tempIdx / 256) || (i + 1);
-    }
-
-    // Sample of indices selected (first few from finalP for display)
-    const prfSetSample = finalP.slice(0, 5).map(k => k * chunkSize + finalOffsets[k]);
-
     return {
-        balance: balance,
+      balance: balance,
+      saturated: saturated,
+      visualization: {
+        hintIdx: hintIdx,
+        r0: r0.toString(),
+        r1: r1.toString(),
+        hintVal: parity.toString(),
+        isPromoted: isPromoted,
+        chunkSize: chunkSize,
+        setSize: setSize,
+        prfSetSize: blocks.size,
+        targetIndex: targetIndex,
+        targetChunk: alpha,
+        serverParity: r0.toString(),
+        hintParity: parity.toString(),
+        delta: '0',
+        hintValue: balance.toString(),
+        dbSize: chunkSize * setSize,
         saturated: saturated,
-        visualization: {
-            // Original fields
-            hintIdx: selectedHintIdx,
-            r0: r0.toString(),
-            r1: r1.toString(),
-            hintVal: hintVal.toString(),
-            // Fields expected by App.jsx UI
-            prfKey: prfKeyBytes,
-            prfSetSample: prfSetSample,
-            chunkSize: chunkSize,
-            setSize: setSize,
-            prfSetSize: finalP.length + 1, // +1 for alpha that was punctured
-            targetIndex: targetIndex,
-            targetChunk: alpha,
-            serverParity: r0.toString(),
-            hintParity: hintVal.toString(),
-            delta: (delta === 0n ? '0' : delta.toString()),
-            hintValue: balance.toString(), // Use masked balance
-            dbSize: chunkSize * setSize,
-            saturated: saturated
-        }
+        stats: this.clientState.getStats()
+      }
     };
   }
   
   getHintSize() {
-    return this.hints ? this.hints.byteLength : 0;
+    return this.clientState ? this.clientState.toBytes().byteLength : 0;
   }
 
-  isBlockInP(hintIdx, blockIdx) {
-      // MurmurHash3 64-bit finalizer mixing function for better distribution
-      let h = BigInt(hintIdx) ^ (BigInt(blockIdx) << 32n);
-      h ^= h >> 33n;
-      h *= 0xff51afd7ed558ccdn;
-      h ^= h >> 33n;
-      h *= 0xc4ceb9fe1a85ec53n;
-      h ^= h >> 33n;
-      return (h & 1n) === 0n;
+  applyAccountDelta(accountIndex, delta) {
+    if (!this.clientState) return;
+    
+    // Convert delta bytes to BigInt
+    let deltaValue = 0n;
+    const view = new DataView(delta.buffer, delta.byteOffset, 32);
+    for (let i = 0; i < 4; i++) {
+      deltaValue |= view.getBigUint64(i * 8, true) << BigInt(i * 64);
+    }
+    
+    // Use PlinkoClientState's updateHint method
+    this.clientState.updateHint(accountIndex, deltaValue);
   }
 
-  readHint(hintIdx) {
-      const offset = hintIdx * 32;
-      const view = new DataView(this.hints.buffer);
-      let val = 0n;
-      for (let i = 0; i < 4; i++) {
-        val += view.getBigUint64(offset + i * 8, true) << BigInt(i * 64);
-      }
-      return val;
-  }
-
-  applyDelta(deltaBytes, offset) {
-      // offset in delta file was calculated as: header + hintSetID * chunkSize * 32.
-      // But in "Heavy Client", that was wrong.
-      // Here, we assume the delta is meant for HINTS.
-      // So delta file format: hintSetID is the index in 'hints'.
-      // We need to ignore the 'offset' passed by plinko-client.js and use hintSetID directly.
-      // But plinko-client.js calls applyDelta(delta, offset).
-      // We should update plinko-client.js to pass hintSetID or handle it here.
-      // For now, let's assume the delta logic is fixed in plinko-client.js or we interpret offset.
-      // Actually, plinko-client.js calculates offset = 32 + id * ...
-      // We should modify plinko-client.js to just call applyHintDelta(id, delta).
-  }
-  
-  // ... Helpers ...
+  // Helper methods
   async fetchSnapshotManifest() {
     const url = `${this.cdnUrl}/snapshots/latest/manifest.json?t=${Date.now()}`;
     const response = await fetch(url, { cache: 'no-store' });
@@ -712,40 +378,30 @@ export class PlinkoPIRClient {
 
   buildSnapshotUrls(fileEntry) {
     const candidates = [];
-    // Direct CDN path first (most reliable)
     const snapshotPath = `snapshots/${this.snapshotVersion}/${fileEntry.path}`;
     candidates.push(`${this.cdnUrl}/${snapshotPath}`);
-    // IPFS fallbacks
     if (fileEntry?.ipfs?.gateway_url) candidates.push(fileEntry.ipfs.gateway_url);
     if (fileEntry?.ipfs?.cid) candidates.push(`${this.cdnUrl}/ipfs/${fileEntry.ipfs.cid}`);
-    log(`📋 Snapshot URL candidates: ${candidates.join(', ')}`);
     return [...new Set(candidates.filter(Boolean))];
   }
 
   async downloadFromCandidates(urls, label, fallbackSize, onProgress) {
-      // ... (Keep original download logic) ...
-      // For brevity in this edit, I will assume the original download logic is available or I should copy it.
-      // Since I am using create_file, I must provide the FULL content.
-      // I will copy the download logic from the original file.
-      
-      // (Copying helper methods from original file...)
-      let lastError = null;
-      for (const url of urls) {
-        try {
-          return await this.downloadBinary(url, label, fallbackSize, onProgress, url);
-        } catch (err) {
-          console.warn(`⚠️  Download failed for ${url}: ${err.message}`);
-          lastError = err;
-        }
+    let lastError = null;
+    for (const url of urls) {
+      try {
+        return await this.downloadBinary(url, label, fallbackSize, onProgress, url);
+      } catch (err) {
+        console.warn(`⚠️  Download failed for ${url}: ${err.message}`);
+        lastError = err;
       }
-      throw lastError || new Error(`Failed to download ${label}`);
+    }
+    throw lastError || new Error(`Failed to download ${label}`);
   }
 
   async downloadBinary(url, label, fallbackSize, onProgress, cacheKey = null) {
     const CACHE_NAME = 'plinko-data-v1';
     const hasCacheApi = typeof caches !== 'undefined';
 
-    // 1. Check cache first
     if (cacheKey && hasCacheApi) {
       try {
         const cache = await caches.open(CACHE_NAME);
@@ -764,10 +420,7 @@ export class PlinkoPIRClient {
     log(`📥 Downloading ${label} from ${url}...`);
     const response = await fetch(url, {
       cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache'
-      }
+      headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
     });
     if (!response.ok) {
       throw new Error(`Failed to download ${label}: ${response.status}`);
@@ -775,18 +428,15 @@ export class PlinkoPIRClient {
 
     const contentLength = response.headers.get('content-length');
     const total = contentLength ? parseInt(contentLength, 10) : fallbackSize || 0;
-
     const reader = response.body.getReader();
     let receivedLength = 0;
     const chunks = [];
-
     let lastLogTime = Date.now();
     const startTime = Date.now();
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       chunks.push(value);
       receivedLength += value.length;
 
@@ -812,34 +462,28 @@ export class PlinkoPIRClient {
       position += chunk.length;
     }
 
-    // 2. Save to cache
     if (cacheKey && hasCacheApi) {
       try {
         const cache = await caches.open(CACHE_NAME);
-        const responseToCache = new Response(chunksAll);
-        await cache.put(cacheKey, responseToCache);
+        await cache.put(cacheKey, new Response(chunksAll));
         log(`💾 Cached ${label}`);
       } catch (err) {
         console.warn('Failed to write to cache:', err);
       }
     }
 
-    const finalSize = (receivedLength / 1024 / 1024).toFixed(1);
-    log(`✅ Downloaded ${label} (${finalSize} MB)`);
+    log(`✅ Downloaded ${label} (${(receivedLength / 1024 / 1024).toFixed(1)} MB)`);
     return chunksAll;
   }
 
   async verifySnapshotHash(bytes, expectedHex) {
-    if (!expectedHex) {
-      return;
-    }
+    if (!expectedHex) return;
     let hashBytes;
     const subtle = browserCrypto?.subtle;
     if (subtle && typeof subtle.digest === 'function') {
       const hashBuffer = await subtle.digest('SHA-256', bytes);
       hashBytes = new Uint8Array(hashBuffer);
     } else {
-      console.warn('⚠️ WebCrypto subtle API unavailable; falling back to @noble/hashes for snapshot verification');
       hashBytes = sha256(bytes);
     }
     const actualHex = this.bufferToHex(hashBytes);
@@ -850,9 +494,7 @@ export class PlinkoPIRClient {
   }
 
   bufferToHex(bytes) {
-    return Array.from(bytes)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
+    return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   async loadFromCache(cacheName, key) {
@@ -874,159 +516,29 @@ export class PlinkoPIRClient {
     if (typeof caches === 'undefined') return;
     try {
       const cache = await caches.open(cacheName);
-      const response = new Response(data);
-      await cache.put(key, response);
+      await cache.put(key, new Response(data));
       log(`💾 Cached ${key} (${(data.byteLength / 1024 / 1024).toFixed(1)} MB)`);
     } catch (e) {
       console.warn(`Cache save failed for ${key}:`, e);
     }
   }
 
-  async loadCheckpoint(key) {
-    if (typeof caches === 'undefined') return null;
-    try {
-      const cache = await caches.open('plinko-checkpoints');
-      const metaResponse = await cache.match(`${key}-meta`);
-      const hintsResponse = await cache.match(`${key}-hints`);
-      if (metaResponse && hintsResponse) {
-        const meta = await metaResponse.json();
-        const hintsBuffer = await hintsResponse.arrayBuffer();
-        return {
-          completedChunks: meta.completedChunks,
-          hints: new Uint8Array(hintsBuffer)
-        };
-      }
-    } catch (e) {
-      console.warn(`Checkpoint load failed:`, e);
-    }
-    return null;
-  }
-
-  async saveCheckpoint(key, checkpoint) {
-    if (typeof caches === 'undefined') return;
-    try {
-      const cache = await caches.open('plinko-checkpoints');
-      await cache.put(`${key}-meta`, new Response(JSON.stringify({ completedChunks: checkpoint.completedChunks })));
-      await cache.put(`${key}-hints`, new Response(checkpoint.hints));
-      log(`💾 Checkpoint saved (chunk ${checkpoint.completedChunks})`);
-    } catch (e) {
-      console.warn(`Checkpoint save failed:`, e);
-    }
-  }
-
-  async clearCheckpoint(key) {
-    if (typeof caches === 'undefined') return;
-    try {
-      const cache = await caches.open('plinko-checkpoints');
-      await cache.delete(`${key}-meta`);
-      await cache.delete(`${key}-hints`);
-    } catch (e) {
-      // Ignore
-    }
-  }
-
   async downloadAddressMapping(onProgress) {
-    // Add cache-busting timestamp to force fresh download
-    // This ensures we get the NEW file, not cached old Anvil data
     const timestamp = Date.now();
     const url = `${this.cdnUrl}/address-mapping.bin?v=${timestamp}`;
     const mappingEntries = this.metadata?.dbSize || DATASET_STATS.addressCount;
     const mappingBytes = mappingEntries * 24;
     const mappingMB = Number((mappingBytes / 1024 / 1024).toFixed(1));
     const mappingLabel = `address-mapping.bin (~${mappingMB} MB)`;
-    
-    // Use snapshot version in cache key to ensure we get matching mapping for the DB
     const cacheKey = `address-mapping-${this.snapshotVersion}`;
 
     const chunksAll = await this.downloadBinary(url, mappingLabel, mappingBytes, onProgress, cacheKey);
-
-    const mappingData = chunksAll.buffer;
-    const view = new DataView(mappingData);
-
-    // Parse address-mapping.bin
-    // Format: [20 bytes address][4 bytes index (little-endian)] repeated
-    this.addressMapping = new Map();
-
-    const entrySize = 24; // 20 bytes address + 4 bytes index
-    const numEntries = mappingData.byteLength / entrySize;
-
-    log(`📊 Parsing ${numEntries.toLocaleString()} address entries...`);
-
-    for (let i = 0; i < numEntries; i++) {
-      const offset = i * entrySize;
-
-      // Read 20-byte address
-      const addressBytes = new Uint8Array(mappingData, offset, 20);
-      const addressHex = '0x' + Array.from(addressBytes)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
-
-      // Read 4-byte index (little-endian)
-      const index = view.getUint32(offset + 20, true);
-
-      this.addressMapping.set(addressHex.toLowerCase(), index);
-    }
-
-    const finalSize = (chunksAll.byteLength / 1024 / 1024).toFixed(1);
-    log(`✅ Address mapping loaded (${finalSize} MB, ${this.addressMapping.size.toLocaleString()} addresses)`);
-
-    // Log address range for debugging and cache verification
-    if (this.addressMapping.size > 0) {
-      const addresses = Array.from(this.addressMapping.keys()).sort();
-      const firstAddr = addresses[0];
-      const lastAddr = addresses[addresses.length - 1];
-      log(`📍 Address range: ${firstAddr} to ${lastAddr}`);
-      const expectedCount = (this.metadata?.dbSize || DATASET_STATS.addressCount).toLocaleString();
-      log(`ℹ️  Expected dataset size: ${expectedCount} Ethereum addresses from the initial 99k mainnet blocks`);
-
-      // Detect stale Anvil cache
-      if (firstAddr.startsWith('0x1000')) {
-        console.error(`❌ STALE CACHE DETECTED! Got Anvil test data (0x1000...) instead of real Ethereum data (0x0000...)`);
-        console.error(`⚠️  Please hard-refresh (Ctrl+Shift+R or Cmd+Shift+R) to clear browser cache`);
-      }
-    }
+    this.parseAddressMapping(chunksAll);
   }
 
   addressToIndex(address) {
-      const idx = this.addressMapping?.get(address.toLowerCase());
-      if (idx === undefined) throw new Error("Address not found");
-      return idx;
-  }
-
-  // Apply raw account delta to local private hints
-  applyAccountDelta(accountIndex, delta) {
-      if (!this.hints) return;
-      
-      const { chunkSize } = this.metadata;
-      const alpha = Math.floor(accountIndex / chunkSize);
-      const beta = accountIndex % chunkSize;
-      
-      // 1. Find hint sets containing this element
-      const iprf = this.iprfs[alpha];
-      const hintIndices = iprf.inverse(beta);
-      
-      // 2. Create view for delta
-      const dView = new DataView(delta.buffer, delta.byteOffset, 32);
-      const d0 = dView.getBigUint64(0, true);
-      const d1 = dView.getBigUint64(8, true);
-      const d2 = dView.getBigUint64(16, true);
-      const d3 = dView.getBigUint64(24, true);
-
-      const view = new DataView(this.hints.buffer);
-
-      for (const hintIdxBig of hintIndices) {
-          const hintIdx = Number(hintIdxBig);
-          // Only update hint if the block (alpha) is in the partition P for this hint
-          if (this.isBlockInP(hintIdx, alpha)) {
-              const offset = hintIdx * 32;
-              if (offset + 32 > this.hints.byteLength) continue;
-
-              // XOR delta into hint
-              view.setBigUint64(offset, view.getBigUint64(offset, true) ^ d0, true);
-              view.setBigUint64(offset+8, view.getBigUint64(offset+8, true) ^ d1, true);
-              view.setBigUint64(offset+16, view.getBigUint64(offset+16, true) ^ d2, true);
-              view.setBigUint64(offset+24, view.getBigUint64(offset+24, true) ^ d3, true);
-          }
-      }
+    const idx = this.addressMapping?.get(address.toLowerCase());
+    if (idx === undefined) throw new Error("Address not found");
+    return idx;
   }
 }

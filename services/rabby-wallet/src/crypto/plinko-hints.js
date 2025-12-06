@@ -465,4 +465,144 @@ export class PlinkoClientState {
       queriesBeforeRefresh: availableRegular + availablePromoted
     };
   }
+
+  /**
+   * Serialize hint parities to bytes for caching
+   * Only stores parities (not lifecycle state) for v1
+   */
+  toBytes() {
+    const MAGIC = 0x504C484E; // "PLHN"
+    const VERSION = 1;
+    
+    // Header: 32 bytes
+    // Regular hints: numRegularHints * 32 bytes
+    // Backup parityIn: numBackupHints * 32 bytes
+    // Backup parityOut: numBackupHints * 32 bytes
+    const headerSize = 32;
+    const regularSize = this.numRegularHints * 32;
+    const backupSize = this.numBackupHints * 32 * 2;
+    const totalSize = headerSize + regularSize + backupSize;
+    
+    const buffer = new ArrayBuffer(totalSize);
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    
+    // Header
+    view.setUint32(0, MAGIC, true);
+    view.setUint32(4, VERSION, true);
+    view.setUint32(8, this.n & 0xFFFFFFFF, true);
+    view.setUint32(12, Math.floor(this.n / 0x100000000), true);
+    view.setUint32(16, this.w, true);
+    view.setUint32(20, this.lambda, true);
+    view.setUint32(24, this.q, true);
+    view.setUint32(28, this.c, true);
+    
+    // Regular hint parities
+    let offset = headerSize;
+    for (let j = 0; j < this.numRegularHints; j++) {
+      const parity = this.regularHints[j]?.parity || 0n;
+      this.writeBigInt256(bytes, offset, parity);
+      offset += 32;
+    }
+    
+    // Backup parityIn
+    for (let k = 0; k < this.numBackupHints; k++) {
+      const parity = this.backupHints[k]?.parityIn || 0n;
+      this.writeBigInt256(bytes, offset, parity);
+      offset += 32;
+    }
+    
+    // Backup parityOut
+    for (let k = 0; k < this.numBackupHints; k++) {
+      const parity = this.backupHints[k]?.parityOut || 0n;
+      this.writeBigInt256(bytes, offset, parity);
+      offset += 32;
+    }
+    
+    return bytes;
+  }
+
+  /**
+   * Restore hint parities from cached bytes
+   * Regenerates block subsets deterministically from masterKey
+   */
+  static fromBytes(bytes, masterKey) {
+    const MAGIC = 0x504C484E;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    
+    // Validate header
+    if (view.getUint32(0, true) !== MAGIC) {
+      throw new Error('Invalid hints cache magic');
+    }
+    const version = view.getUint32(4, true);
+    if (version !== 1) {
+      throw new Error(`Unsupported hints cache version: ${version}`);
+    }
+    
+    // Read params
+    const nLow = view.getUint32(8, true);
+    const nHigh = view.getUint32(12, true);
+    const n = nLow + nHigh * 0x100000000;
+    const w = view.getUint32(16, true);
+    const lambda = view.getUint32(20, true);
+    const q = view.getUint32(24, true);
+    const c = view.getUint32(28, true);
+    
+    // Create state (this initializes keys and subsetGen)
+    const state = new PlinkoClientState(n, w, lambda, q, masterKey);
+    
+    // Verify params match
+    if (state.c !== c) {
+      throw new Error(`Block count mismatch: expected ${c}, got ${state.c}`);
+    }
+    
+    // Initialize hints structure (creates empty hints with correct block subsets)
+    state.initializeHints();
+    
+    // Read regular hint parities
+    const headerSize = 32;
+    let offset = headerSize;
+    for (let j = 0; j < state.numRegularHints; j++) {
+      state.regularHints[j].parity = state.readBigInt256(bytes, offset);
+      offset += 32;
+    }
+    
+    // Read backup parityIn
+    for (let k = 0; k < state.numBackupHints; k++) {
+      state.backupHints[k].parityIn = state.readBigInt256(bytes, offset);
+      offset += 32;
+    }
+    
+    // Read backup parityOut
+    for (let k = 0; k < state.numBackupHints; k++) {
+      state.backupHints[k].parityOut = state.readBigInt256(bytes, offset);
+      offset += 32;
+    }
+    
+    return state;
+  }
+
+  writeBigInt256(bytes, offset, value) {
+    for (let i = 0; i < 4; i++) {
+      const word = value & 0xFFFFFFFFFFFFFFFFn;
+      const wordOffset = offset + i * 8;
+      for (let j = 0; j < 8; j++) {
+        bytes[wordOffset + j] = Number((word >> BigInt(j * 8)) & 0xFFn);
+      }
+      value >>= 64n;
+    }
+  }
+
+  readBigInt256(bytes, offset) {
+    let value = 0n;
+    for (let i = 0; i < 4; i++) {
+      let word = 0n;
+      const wordOffset = offset + i * 8;
+      for (let j = 0; j < 8; j++) {
+        word |= BigInt(bytes[wordOffset + j]) << BigInt(j * 8);
+      }
+      value |= word << BigInt(i * 64);
+    }
+    return value;
+  }
 }
