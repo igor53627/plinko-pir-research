@@ -11,7 +11,7 @@ import { performance } from 'perf_hooks';
 
 // Import our crypto modules
 import { FastAes128 } from '../src/crypto/aes128-fast.js';
-import { IPRF } from '../src/crypto/iprf.js';
+import { IPRF } from '../src/crypto/iprf-v2.js';
 
 // Try to import blake3 if available
 let blake3 = null;

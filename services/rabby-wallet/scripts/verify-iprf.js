@@ -7,7 +7,7 @@
  * 2. Is the inverse function correct (Forward(Inverse(y)) = y for all preimages)?
  */
 
-import { IPRF } from '../src/crypto/iprf.js';
+import { IPRF } from '../src/crypto/iprf-v2.js';
 
 // Test parameters matching production
 const CONFIG = {

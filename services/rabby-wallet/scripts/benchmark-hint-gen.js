@@ -5,7 +5,7 @@
  * Run with: node scripts/benchmark-hint-gen.js
  */
 
-import { IPRF } from '../src/crypto/iprf.js';
+import { IPRF } from '../src/crypto/iprf-v2.js';
 import { createHash } from 'crypto';
 
 // Configuration - Real world scenario

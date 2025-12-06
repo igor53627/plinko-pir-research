@@ -1,5 +1,5 @@
 import { sha256 } from '@noble/hashes/sha256';
-import { IPRF } from '../crypto/iprf.js';
+import { IPRF } from '../crypto/iprf-v2.js';
 import { DATASET_STATS } from '../constants/dataset.js';
 
 const browserCrypto = typeof globalThis !== 'undefined' && globalThis.crypto

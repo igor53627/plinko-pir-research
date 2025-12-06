@@ -4,7 +4,7 @@
  */
 
 import { performance } from 'perf_hooks';
-import { IPRF } from '../src/crypto/iprf.js';
+import { IPRF } from '../src/crypto/iprf-v2.js';
 import { FastAes128 } from '../src/crypto/aes128-fast.js';
 
 // Production parameters

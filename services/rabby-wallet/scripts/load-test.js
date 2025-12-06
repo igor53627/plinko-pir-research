@@ -9,7 +9,7 @@
 
 import { performance } from 'perf_hooks';
 import { existsSync, readFileSync } from 'fs';
-import { IPRF } from '../src/crypto/iprf.js';
+import { IPRF } from '../src/crypto/iprf-v2.js';
 
 const DB_PATH = process.argv[2];
 

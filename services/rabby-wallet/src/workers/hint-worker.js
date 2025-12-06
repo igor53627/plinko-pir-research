@@ -5,7 +5,7 @@
  * Each worker handles independent chunks, then results are XORed together.
  */
 
-import { IPRF } from '../crypto/iprf.js';
+import { IPRF } from '../crypto/iprf-v2.js';
 
 // Worker state
 let iprfs = null;
